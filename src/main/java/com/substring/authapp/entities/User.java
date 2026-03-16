@@ -2,6 +2,7 @@ package com.substring.authapp.entities;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.Builder.Default;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -37,7 +38,7 @@ public class User implements UserDetails {
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(name = "user->roles",
         joinColumns = @JoinColumn(name = "user_id") , inverseJoinColumns = @JoinColumn(name = "role_id"))
-
+    @Builder.Default
     private Set<Role> roles = new HashSet<>();
     //private String gender;
     //private Address address;
