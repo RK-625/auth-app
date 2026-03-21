@@ -40,6 +40,16 @@ spring:
                 - email
                 - profile
                 - openid
+            github:
+              client-id: ${GITHUB_CLIENT_ID:Ov23li0NfcgfQ0WHteKQ}
+              client-secret: ${GITHUB_CLIENT_SECRET:6e0b9863c1e821b7adccfc8135b6cc291650db5b}
+              scope:
+                - user:email
+                - read:user
+          provider:
+            github:
+              authorization-uri: https://github.com/login/oauth/authorize?prompt=consent
+
 
 security:
     jwt:
