@@ -7,7 +7,7 @@ import com.substring.authapp.entities.Provider;
 import com.substring.authapp.entities.RefreshToken;
 import com.substring.authapp.entities.User;
 import com.substring.authapp.helpers.UserHelper;
-import com.substring.authapp.repositories.RefreshTokenRepositry;
+import com.substring.authapp.repositories.RefreshTokenRepository;
 import com.substring.authapp.repositories.UserRepository;
 import com.substring.authapp.security.provider.GithubService;
 import jakarta.servlet.ServletException;
@@ -42,7 +42,7 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
     private final Logger logger = org.slf4j.LoggerFactory.getLogger(OAuth2SuccessHandler.class);
     private final UserRepository userRepository;
     private final JwtService jwtService;
-    private final RefreshTokenRepositry refreshTokenRepositry;
+    private final RefreshTokenRepository refreshTokenRepository;
     private final CookieService cookieService;
     private final ModelMapper modelMapper;
     private final GithubService githubService;
@@ -108,7 +108,7 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
         // also generate the referesh token
         String refereshTokenJti = UUID.randomUUID().toString();
         RefreshToken refreshTokenOb = RefreshToken.builder().jti(refereshTokenJti).user(user).createdAt(Instant.now()).expiresAt(Instant.now().plusSeconds(jwtService.getRefereshTtlSeconds())).revoked(false).build();
-        refreshTokenRepositry.save(refreshTokenOb);
+        refreshTokenRepository.save(refreshTokenOb);
         String refreshToken = jwtService.generateRefereshToken(user, refereshTokenJti);
         // Use the Cookie Service to set the cookie
         cookieService.attachRefreshCookie(response,refreshToken,(int)jwtService.getAccessTtlSeconds());

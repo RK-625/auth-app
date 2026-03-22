@@ -45,13 +45,13 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(authorizeHttpRequests ->
-                authorizeHttpRequests.requestMatchers("/api/v1/auth/register").permitAll()
-                        .requestMatchers("/api/v1/auth/login").permitAll()
-                        .requestMatchers("/login/oauth2/**").permitAll()
-                        .requestMatchers("/oauth2/**","/login", "/login/**").permitAll()
-                        .requestMatchers("/error").permitAll()
-                        .requestMatchers("/api/v1/auth/refresh").permitAll()
-                        .requestMatchers("/api/v1/auth/logout").permitAll()
+                authorizeHttpRequests
+                        .requestMatchers("/api/v1/auth/register",
+                                              "/api/v1/auth/login",
+                                        "/api/v1/auth/refresh",
+                                        "/api/v1/auth/logout",
+                                        "/oauth2/**",
+                                        "/login/**", "/error").permitAll()
                         .anyRequest().authenticated()
                 ).oauth2Login(oauth2 -> oauth2.successHandler(authenticationSuccessHandler).failureHandler((req, res, ex) -> {
                     log.error("OAuth2 failure URI: {}", req.getRequestURI());

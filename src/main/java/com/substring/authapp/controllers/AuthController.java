@@ -7,7 +7,7 @@ import com.substring.authapp.dtos.UserDto;
 import com.substring.authapp.entities.RefreshToken;
 import com.substring.authapp.entities.User;
 import com.substring.authapp.helpers.UserHelper;
-import com.substring.authapp.repositories.RefreshTokenRepositry;
+import com.substring.authapp.repositories.RefreshTokenRepository;
 import com.substring.authapp.repositories.UserRepository;
 import com.substring.authapp.security.CookieService;
 import com.substring.authapp.security.JwtService;
@@ -44,7 +44,7 @@ public class AuthController {
     public final AuthService authService;
     private final AuthenticationManager authenticationManager;
     private final UserRepository userRepository;
-    private final RefreshTokenRepositry refreshTokenRepositry;
+    private final RefreshTokenRepository refreshTokenRepository;
     private final JwtService jwtService;
     private final CookieService cookieService;
     private final ModelMapper modelMapper;
@@ -61,7 +61,7 @@ public class AuthController {
         // also generate the referesh token
         String refereshTokenJti = UUID.randomUUID().toString();
         RefreshToken refreshTokenOb = RefreshToken.builder().jti(refereshTokenJti).user(user).createdAt(Instant.now()).expiresAt(Instant.now().plusSeconds(jwtService.getRefereshTtlSeconds())).revoked(false).build();
-        refreshTokenRepositry.save(refreshTokenOb);
+        refreshTokenRepository.save(refreshTokenOb);
         String refreshToken = jwtService.generateRefereshToken(user, refereshTokenJti);
 
         // Use the Cookie Service to set the cookie
@@ -94,7 +94,7 @@ public class AuthController {
         String jti = jwtService.getJti(refreshToken);
         UUID useriD = jwtService.getUseriD(refreshToken);
 
-        RefreshToken refreshTokenOb = refreshTokenRepositry.findByJti(jti).orElseThrow(() -> new BadCredentialsException("The Refresh Token is missing in the Database"));
+        RefreshToken refreshTokenOb = refreshTokenRepository.findByJti(jti).orElseThrow(() -> new BadCredentialsException("The Refresh Token is missing in the Database"));
         if(refreshTokenOb.isRevoked()) throw new BadCredentialsException("The Refresh Token is revoked");
         if(refreshTokenOb.getExpiresAt().isBefore(Instant.now())) throw new BadCredentialsException("The Refresh Token is expired");
         if(refreshTokenOb.getUser().getId().equals(useriD) == false) throw new BadCredentialsException("The Refresh Token is not valid for the user");
@@ -103,12 +103,12 @@ public class AuthController {
         refreshTokenOb.setRevoked(false);
         String newJti  = UUID.randomUUID().toString();
         refreshTokenOb.setReplacedByToken(newJti);
-        refreshTokenRepositry.save(refreshTokenOb);
+        refreshTokenRepository.save(refreshTokenOb);
         // crate the new refresh token
         String newAccessToken = jwtService.generateAccessToken(refreshTokenOb.getUser());
         String newRefreshToken = jwtService.generateRefereshToken(refreshTokenOb.getUser(),newJti);
         RefreshToken newRefreshTokenOb = RefreshToken.builder().jti(newJti).revoked(false).user(refreshTokenOb.getUser()).createdAt(Instant.now()).expiresAt(Instant.now().plusSeconds(jwtService.getRefereshTtlSeconds())).build();
-        refreshTokenRepositry.save(newRefreshTokenOb);
+        refreshTokenRepository.save(newRefreshTokenOb);
         // add the new refresh token to the cookies here
         cookieService.attachRefreshCookie(response,newRefreshToken,(int)jwtService.getAccessTtlSeconds());
         cookieService.addNoStoreHeadersToResponse(response);
@@ -140,9 +140,9 @@ public class AuthController {
         String refreshtoken = readRefreshTokenRequest(body,request).orElseThrow(() -> new BadCredentialsException("Invalid Refresh Token"));
         if(!jwtService.isRefreshToken(refreshtoken)) throw new BadCredentialsException("Invalid Refresh Token 123");
         String jti = jwtService.getJti(refreshtoken);
-        RefreshToken refreshTokenOb = refreshTokenRepositry.findByJti(jti).orElseThrow(() -> new BadCredentialsException("The Refresh Token is missing in the Database"));
+        RefreshToken refreshTokenOb = refreshTokenRepository.findByJti(jti).orElseThrow(() -> new BadCredentialsException("The Refresh Token is missing in the Database"));
         refreshTokenOb.setRevoked(true);
-        refreshTokenRepositry.save(refreshTokenOb);
+        refreshTokenRepository.save(refreshTokenOb);
         cookieService.clearRefreshCookie(response);
         cookieService.addNoStoreHeadersToResponse(response);
         SecurityContextHolder.clearContext();
