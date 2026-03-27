@@ -3,19 +3,28 @@ package com.substring.authapp.services.impl;
 import com.substring.authapp.dtos.UserDto;
 import com.substring.authapp.services.AuthService;
 import com.substring.authapp.services.UserService;
-import lombok.AllArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+/**
+ * Service to handle registration and authentication related operations.
+ */
 @Service
-@AllArgsConstructor
-public class AuthServiceImpl  implements AuthService {
+public class AuthServiceImpl implements AuthService {
 
     private final UserService userService;
-    private PasswordEncoder passwordEncoder;
+    private final PasswordEncoder passwordEncoder;
+
+    public AuthServiceImpl(UserService userService, PasswordEncoder passwordEncoder) {
+        this.userService = userService;
+        this.passwordEncoder = passwordEncoder;
+    }
+
+    /**
+     * Registers a new user account, ensuring the password is encrypted.
+     */
     @Override
     public UserDto registerUser(UserDto userDto) {
-        // hash the password for the userDto first
         userDto.setPassword(passwordEncoder.encode(userDto.getPassword()));
         return userService.createUser(userDto);
     }

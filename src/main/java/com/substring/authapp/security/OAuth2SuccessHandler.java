@@ -1,33 +1,25 @@
 package com.substring.authapp.security;
 
-
 import com.substring.authapp.dtos.TokenResponse;
 import com.substring.authapp.dtos.UserDto;
 import com.substring.authapp.entities.Provider;
 import com.substring.authapp.entities.RefreshToken;
 import com.substring.authapp.entities.User;
-import com.substring.authapp.helpers.UserHelper;
 import com.substring.authapp.repositories.RefreshTokenRepository;
 import com.substring.authapp.repositories.UserRepository;
 import com.substring.authapp.security.provider.GithubService;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.slf4j.Logger;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
-import org.springframework.util.MultiValueMap;
-import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -35,11 +27,14 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Strategy class to handle post-authentication logic for OAuth2 providers (Google, GitHub).
+ * Automatically handles user provisioning and token issuance after a successful social login.
+ */
 @Component
-@RequiredArgsConstructor
 public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
 
-    private final Logger logger = org.slf4j.LoggerFactory.getLogger(OAuth2SuccessHandler.class);
+    private final Logger logger = LoggerFactory.getLogger(OAuth2SuccessHandler.class);
     private final UserRepository userRepository;
     private final JwtService jwtService;
     private final RefreshTokenRepository refreshTokenRepository;
@@ -48,73 +43,109 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
     private final GithubService githubService;
     private final OAuth2AuthorizedClientService authorizedClientService;
 
-    // returns a Map of the attributes
-    private Map<Object,Object> fetchAttributes(Authentication authentication){
-        Map<Object,Object> res = new HashMap<>();
-        // the details
-        // the access token to the provider api
-        OAuth2User oAuthUser = (OAuth2User) authentication.getPrincipal();
-        OAuth2AuthenticationToken token = (OAuth2AuthenticationToken) authentication;
-        // provider --> provider
-        Provider provider = Provider.LOCAL;
-        if(authentication instanceof OAuth2AuthenticationToken){
-            switch (token.getAuthorizedClientRegistrationId()){
-                case "google" : provider = (Provider.GOOGLE); break;
-                case "github" : provider = (Provider.GITHUB); break;
-                case "facebook" : provider = (Provider.FACEBOOK); break;
-                default : provider = (Provider.LOCAL);
-            }
-        }
-        res.put("provider",provider);
-        // 1. name-->  name
-        res.put("name",oAuthUser.getAttribute("name"));
-        //2. image--> image
-        String image = provider.equals(Provider.GOOGLE) ? oAuthUser.getAttribute("picture")
-                : provider.equals(Provider.GITHUB) ? oAuthUser.getAttribute("avatar_url")
-                : "" ;
-        res.put("image", image);
-        //3. email--> email
-        String email = oAuthUser.getAttribute("email") == null ? githubService.getEmailFromGithub(authorizedClientService.loadAuthorizedClient(token.getAuthorizedClientRegistrationId(), token.getName())) : oAuthUser.getAttribute("email");
-        res.put("email",email);
-        return res;
+    public OAuth2SuccessHandler(UserRepository userRepository,
+                                JwtService jwtService,
+                                RefreshTokenRepository refreshTokenRepository,
+                                CookieService cookieService,
+                                ModelMapper modelMapper,
+                                GithubService githubService,
+                                OAuth2AuthorizedClientService authorizedClientService) {
+        this.userRepository = userRepository;
+        this.jwtService = jwtService;
+        this.refreshTokenRepository = refreshTokenRepository;
+        this.cookieService = cookieService;
+        this.modelMapper = modelMapper;
+        this.githubService = githubService;
+        this.authorizedClientService = authorizedClientService;
     }
 
     @Override
-    public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response, Authentication authentication) throws IOException, ServletException {
-        logger.info("Authentication success");
-        logger.info(authentication.toString());
-        logger.info("Success URI: {}", request.getRequestURI());
-        logger.info("Query: {}", request.getQueryString());
-        logger.info("Full URL: {}", request.getRequestURL());
-        response.getWriter().write("Authentication success");
+    public void onAuthenticationSuccess(HttpServletRequest request, 
+                                        HttpServletResponse response, 
+                                        Authentication authentication) throws IOException, ServletException {
+        
+        logger.info("Social authentication successful for principal: {}", authentication.getName());
 
-        Map<Object,Object> attributes = fetchAttributes(authentication);
-
+        Map<String, Object> attributes = fetchAttributes(authentication);
         String email = (String) attributes.get("email");
-        String name = (String) attributes.get("name");
-        String image =(String) attributes.get("image");
         Provider provider = (Provider) attributes.get("provider");
 
-        // First Check if the user is already registered in the database
-        User user;
-        if(userRepository.existsByEmail(email) == false){
-            user = User.builder().email(email).name(name).image(image).enabled(true).createdAt(Instant.now()).updatedAt(Instant.now()).provider(provider).build();
-            userRepository.save(user);
-        }
-        else user = userRepository.findByEmail(email).get();
+        // Sync user with database (provisioning)
+        User user = userRepository.findByEmail(email).orElseGet(() -> {
+            User newUser = User.builder()
+                    .email(email)
+                    .name((String) attributes.get("name"))
+                    .image((String) attributes.get("image"))
+                    .enabled(true)
+                    .createdAt(Instant.now())
+                    .updatedAt(Instant.now())
+                    .provider(provider)
+                    .build();
+            return userRepository.save(newUser);
+        });
 
-        // generate the token for the user trying to login
+        // Generate and persist refresh token
         String accessToken = jwtService.generateAccessToken(user);
-        // also generate the referesh token
-        String refereshTokenJti = UUID.randomUUID().toString();
-        RefreshToken refreshTokenOb = RefreshToken.builder().jti(refereshTokenJti).user(user).createdAt(Instant.now()).expiresAt(Instant.now().plusSeconds(jwtService.getRefereshTtlSeconds())).revoked(false).build();
+        String refreshTokenJti = UUID.randomUUID().toString();
+        
+        RefreshToken refreshTokenOb = RefreshToken.builder()
+                .jti(refreshTokenJti)
+                .user(user)
+                .createdAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(jwtService.getRefereshTtlSeconds()))
+                .revoked(false)
+                .build();
         refreshTokenRepository.save(refreshTokenOb);
-        String refreshToken = jwtService.generateRefereshToken(user, refereshTokenJti);
-        // Use the Cookie Service to set the cookie
-        cookieService.attachRefreshCookie(response,refreshToken,(int)jwtService.getAccessTtlSeconds());
+        
+        String refreshToken = jwtService.generateRefereshToken(user, refreshTokenJti);
+
+        // Security headers and cookies
+        cookieService.attachRefreshCookie(response, refreshToken, (int) jwtService.getAccessTtlSeconds());
         cookieService.addNoStoreHeadersToResponse(response);
+
+        // Prepare token response
         TokenResponse tokenResponse = TokenResponse.of(accessToken, refreshToken, jwtService.getAccessTtlSeconds(), "Bearer", modelMapper.map(user, UserDto.class));
-        logger.info("Token Response: {}", tokenResponse);
-        logger.info("Oauth2 is successfull here ");
+        
+        // Final redirection logic could be added here
+        logger.info("OAuth2 flow complete for user: {}", email);
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setContentType("application/json");
+        response.getWriter().write("{\"status\": \"success\", \"message\": \"Authentication successful\"}");
+    }
+
+    /**
+     * Extracts and normalizes user attributes across different OAuth2 providers.
+     */
+    private Map<String, Object> fetchAttributes(Authentication authentication) {
+        Map<String, Object> res = new HashMap<>();
+        OAuth2User oAuthUser = (OAuth2User) authentication.getPrincipal();
+        OAuth2AuthenticationToken token = (OAuth2AuthenticationToken) authentication;
+        
+        String registrationId = token.getAuthorizedClientRegistrationId();
+        Provider provider = switch (registrationId) {
+            case "google" -> Provider.GOOGLE;
+            case "github" -> Provider.GITHUB;
+            case "facebook" -> Provider.FACEBOOK;
+            default -> Provider.LOCAL;
+        };
+
+        res.put("provider", provider);
+        res.put("name", oAuthUser.getAttribute("name"));
+        
+        String image = provider == Provider.GOOGLE ? oAuthUser.getAttribute("picture")
+                     : provider == Provider.GITHUB ? oAuthUser.getAttribute("avatar_url")
+                     : "";
+        res.put("image", image);
+
+        // Special handling for GitHub which might hide email addresses
+        String email = oAuthUser.getAttribute("email");
+        if (email == null && provider == Provider.GITHUB) {
+            email = githubService.getEmailFromGithub(
+                authorizedClientService.loadAuthorizedClient(registrationId, token.getName())
+            );
+        }
+        res.put("email", email);
+        
+        return res;
     }
 }

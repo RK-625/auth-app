@@ -1,19 +1,16 @@
 package com.substring.authapp.security;
 
-import com.substring.authapp.entities.User;
 import com.substring.authapp.helpers.UserHelper;
 import com.substring.authapp.repositories.UserRepository;
-import io.jsonwebtoken.*;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.Jws;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
-import org.hibernate.engine.jdbc.spi.JdbcWrapper;
-import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -27,62 +24,75 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Filter responsible for intercepting HTTP requests and validating JWT access tokens.
+ * If a valid token is present, it populates the SecurityContext with the user's authentication.
+ */
 @Component
-@RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
     private final JwtService jwtService;
     private final UserRepository userRepository;
     private final Logger logger = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
+
+    public JwtAuthenticationFilter(JwtService jwtService, UserRepository userRepository) {
+        this.jwtService = jwtService;
+        this.userRepository = userRepository;
+    }
+
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
+    protected void doFilterInternal(HttpServletRequest request, 
+                                    HttpServletResponse response, 
+                                    FilterChain filterChain) throws ServletException, IOException {
+        
         String header = request.getHeader("Authorization");
-        if(header != null && header.startsWith("Bearer")){
-            // the request should be not null and the start with Bearer token
-            // this is the jwt token
+        
+        if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
-            logger.info("The token is : {}",token);
-            try{
-                if(jwtService.isAccessToken(token) == false){
-                    // it is not a valid access token
+            
+            try {
+                if (!jwtService.isAccessToken(token)) {
                     filterChain.doFilter(request, response);
                     return;
                 }
+
                 Jws<Claims> claims = jwtService.parse(token);
                 Claims payload = claims.getPayload();
                 String userId = payload.getSubject();
-                String jti = payload.getId();
-                UUID userUUUID = UserHelper.parseUUID(userId);
+                UUID userUUID = UserHelper.parseUUID(userId);
 
-                userRepository.findById(userUUUID)
-                        .ifPresent(
-                                user -> {
+                userRepository.findById(userUUID).ifPresent(user -> {
+                    if (user.isEnabled()) {
+                        List<GrantedAuthority> authorities = user.getRoles() == null ? List.of() : 
+                            user.getRoles().stream()
+                                .map(role -> new SimpleGrantedAuthority(role.getName()))
+                                .collect(Collectors.toList());
 
-                                    // if the user is not enbled then exit here itself
-                                    if(user.isEnabled()){
-                                        List<GrantedAuthority> authorityList = user.getRoles() == null ? List.of() : user.getRoles().stream().map(role -> new SimpleGrantedAuthority(role.getName())).collect(Collectors.toList());
-                                        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(user.getEmail(),null,authorityList);
-                                        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request)); // add the details to authentication object
-                                        if(SecurityContextHolder.getContext().getAuthentication() == null){
-                                            SecurityContextHolder.getContext().setAuthentication(authentication); //  add  the authentication to the security context
-                                        }
-                                    }
-                                }
-                        );
-            }
-            catch (ExpiredJwtException e){
+                        UsernamePasswordAuthenticationToken authentication = 
+                            new UsernamePasswordAuthenticationToken(user.getEmail(), null, authorities);
+                        
+                        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+
+                        if (SecurityContextHolder.getContext().getAuthentication() == null) {
+                            SecurityContextHolder.getContext().setAuthentication(authentication);
+                        }
+                    }
+                });
+            } catch (ExpiredJwtException e) {
                 request.setAttribute("error", "Token has expired");
-            }
-            catch (Exception e) {
+                logger.warn("JWT Token expired: {}", e.getMessage());
+            } catch (Exception e) {
                 request.setAttribute("error", "Token is not valid");
+                logger.error("JWT validation error: {}", e.getMessage());
             }
-
         }
+        
         filterChain.doFilter(request, response);
     }
 
     @Override
-    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
-        // for bboth login and register here
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        // Skip authentication filter for auth endpoints as they are permitAll
         return request.getRequestURI().startsWith("/api/v1/auth");
     }
 }

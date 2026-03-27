@@ -1,9 +1,6 @@
 package com.substring.authapp.exceptions;
 
-
 import com.substring.authapp.dtos.ApiError;
-import com.substring.authapp.dtos.ErrorResponse;
-import jakarta.security.auth.message.AuthException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,30 +11,58 @@ import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.client.HttpClientErrorException;
 
 import javax.security.auth.login.CredentialExpiredException;
 
+/**
+ * Centralized exception handling for the entire application.
+ * Standardizes error responses using the ApiError DTO.
+ */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    public final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    @ExceptionHandler({BadCredentialsException.class, UsernameNotFoundException.class, CredentialExpiredException.class, DisabledException.class})
-    public ResponseEntity<ApiError> handleAuthExceptions(Exception e, HttpServletRequest request){
-        logger.info("Exception: {}", e.getMessage());
-        ApiError apiError = ApiError.of(HttpStatus.BAD_REQUEST.value(), "Bad Request", e.getMessage(), request.getRequestURI());
-        return ResponseEntity.badRequest().body(apiError);
+    /**
+     * Handles common authentication and authorization failures.
+     */
+    @ExceptionHandler({
+        BadCredentialsException.class, 
+        UsernameNotFoundException.class, 
+        CredentialExpiredException.class, 
+        DisabledException.class
+    })
+    public ResponseEntity<ApiError> handleAuthExceptions(Exception e, HttpServletRequest request) {
+        logger.warn("Authentication failure: {}", e.getMessage());
+        ApiError apiError = ApiError.of(HttpStatus.UNAUTHORIZED.value(), "Unauthorized", e.getMessage(), request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(apiError);
     }
+
+    /**
+     * Handles cases where a requested resource is missing.
+     */
     @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleResourceNotFoundException(ResourceNotFoundException exception){
-        ErrorResponse errorResponse = new ErrorResponse(exception.getMessage(), HttpStatus.NOT_FOUND, HttpStatus.NOT_FOUND.value());
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+    public ResponseEntity<ApiError> handleResourceNotFoundException(ResourceNotFoundException e, HttpServletRequest request) {
+        ApiError apiError = ApiError.of(HttpStatus.NOT_FOUND.value(), "Not Found", e.getMessage(), request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(apiError);
     }
 
+    /**
+     * Handles invalid client requests or validation failures.
+     */
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ErrorResponse> handleIllegalArgumentException(IllegalArgumentException exception){
-        ErrorResponse errorResponse = new ErrorResponse(exception.getMessage(), HttpStatus.BAD_REQUEST, HttpStatus.BAD_REQUEST.value());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+    public ResponseEntity<ApiError> handleIllegalArgumentException(IllegalArgumentException e, HttpServletRequest request) {
+        ApiError apiError = ApiError.of(HttpStatus.BAD_REQUEST.value(), "Bad Request", e.getMessage(), request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(apiError);
+    }
+
+    /**
+     * Catch-all handler for any unhandled internal server errors.
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiError> handleGenericException(Exception e, HttpServletRequest request) {
+        logger.error("Unhandled exception occurred: ", e);
+        ApiError apiError = ApiError.of(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Internal Server Error", "An unexpected error occurred", request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(apiError);
     }
 }

@@ -27,6 +27,10 @@ spring:
         format_sql: true
     show-sql: true
 
+  sql:
+    init:
+      mode: always
+
 
 ### jwt settings here
   security:
