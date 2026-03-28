@@ -5,6 +5,6 @@ public class ResourceNotFoundException extends RuntimeException {
         super(message);
     }
     public ResourceNotFoundException(){
-        super("The Resource is found !!");
+        super("The Resource is NOT found !!");
     }
 }

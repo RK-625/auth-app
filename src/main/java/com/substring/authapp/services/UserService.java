@@ -1,6 +1,7 @@
 package com.substring.authapp.services;
 
 import com.substring.authapp.dtos.UserDto;
+import java.util.UUID;
 
 public interface UserService {
 
@@ -8,11 +9,11 @@ public interface UserService {
 
     UserDto getUserByEmail(String email);
 
-    UserDto updateUser(UserDto userDto, String userId);
+    UserDto updateUser(UserDto userDto, UUID userId);
 
-    void deleteUser(String userId);
+    void deleteUser(UUID userId);
 
-    UserDto getUserById(String userId);
+    UserDto getUserById(UUID userId);
 
     Iterable<UserDto> getAllUsers();
 }

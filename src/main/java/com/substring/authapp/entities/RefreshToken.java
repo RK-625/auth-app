@@ -33,4 +33,14 @@ public class RefreshToken {
     @Column(nullable = false)
     private boolean revoked;
     private String replacedByToken;
+
+    public static RefreshToken create(User user, String jti, long ttlSeconds) {
+        return RefreshToken.builder()
+                .jti(jti)
+                .user(user)
+                .createdAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(ttlSeconds))
+                .revoked(false)
+                .build();
+    }
 }

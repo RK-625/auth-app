@@ -1,8 +1,7 @@
 package com.substring.authapp.security.provider;
 
 import com.substring.authapp.exceptions.ResourceNotFoundException;
-import org.springframework.context.MessageSource;
-import org.springframework.context.i18n.LocaleContextHolder;
+import com.substring.authapp.helpers.MessageHelper;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -21,11 +20,11 @@ import java.util.Optional;
 public class GithubService {
 
     private final RestClient restClient;
-    private final MessageSource messageSource;
+    private final MessageHelper messageHelper;
 
-    public GithubService(RestClient restClient, MessageSource messageSource) {
+    public GithubService(RestClient restClient, MessageHelper messageHelper) {
         this.restClient = restClient;
-        this.messageSource = messageSource;
+        this.messageHelper = messageHelper;
     }
 
     /**
@@ -37,23 +36,18 @@ public class GithubService {
                 .headers(h -> h.setBearerAuth(client.getAccessToken().getTokenValue()))
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, (request, response) -> {
-                    throw new BadCredentialsException(msg("external.github.error", response.getStatusCode()));
+                    throw new BadCredentialsException(messageHelper.getMessage("external.github.error", response.getStatusCode()));
                 })
                 .body(new ParameterizedTypeReference<List<Map<String, Object>>>() {});
 
         return Optional.ofNullable(emailList)
-                .orElseThrow(() -> new ResourceNotFoundException(msg("external.github.error", "User not found")))
+                .orElseThrow(() -> new ResourceNotFoundException(messageHelper.getMessage("external.github.error", "User not found")))
                 .stream()
                 .filter(email -> Boolean.TRUE.equals(email.get("primary")))
                 .map(email -> (String) email.get("email"))
                 .findAny()
-                .orElseThrow(() -> new BadCredentialsException(msg("external.github.error", "No primary email found")));
+                .orElseThrow(() -> new BadCredentialsException(messageHelper.getMessage("external.github.error", "No primary email found")));
     }
 
-    /**
-     * Helper for localized messages with optional arguments.
-     */
-    private String msg(String key, Object... args) {
-        return messageSource.getMessage(key, args, LocaleContextHolder.getLocale());
-    }
+
 }

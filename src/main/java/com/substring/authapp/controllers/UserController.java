@@ -2,9 +2,13 @@ package com.substring.authapp.controllers;
 
 import com.substring.authapp.dtos.UserDto;
 import com.substring.authapp.services.UserService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.UUID;
 
 /**
  * REST controller for managing system users.
@@ -12,19 +16,16 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/api/v1")
+@RequiredArgsConstructor
 public class UserController {
 
     private final UserService userService;
-
-    public UserController(UserService userService) {
-        this.userService = userService;
-    }
 
     /**
      * Registers a new user account.
      */
     @PostMapping("/root/create")
-    public ResponseEntity<UserDto> createUser(@RequestBody UserDto userDto) {
+    public ResponseEntity<UserDto> createUser(@Valid @RequestBody UserDto userDto) {
         return ResponseEntity.status(HttpStatus.CREATED).body(userService.createUser(userDto));
     }
 
@@ -40,14 +41,14 @@ public class UserController {
      * Retrieves a single user profile by their unique ID.
      */
     @GetMapping("/admin/users/{userId}")
-    public ResponseEntity<UserDto> getUser(@PathVariable String userId) {
+    public ResponseEntity<UserDto> getUser(@PathVariable UUID userId) {
         return ResponseEntity.ok(userService.getUserById(userId));
     }
 
     /**
      * Finds a user profile by their email address.
      */
-    @GetMapping("admin/email/{emailId}")
+    @GetMapping("/admin/email/{emailId}")
     public ResponseEntity<UserDto> getUserByEmail(@PathVariable String emailId) {
         return ResponseEntity.ok(userService.getUserByEmail(emailId));
     }
@@ -55,17 +56,17 @@ public class UserController {
     /**
      * Permanently deletes a user account from the system.
      */
-    @DeleteMapping("root/delete/{userId}")
+    @DeleteMapping("/root/delete/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteUserById(@PathVariable String userId) {
+    public void deleteUserById(@PathVariable UUID userId) {
         userService.deleteUser(userId);
     }
 
     /**
      * Updates profile information for an existing user.
      */
-    @PutMapping("update/user/{userId}")
-    public ResponseEntity<UserDto> updateUser(@PathVariable String userId, @RequestBody UserDto userDto) {
+    @PutMapping("/update/user/{userId}")
+    public ResponseEntity<UserDto> updateUser(@PathVariable UUID userId, @Valid @RequestBody UserDto userDto) {
         return ResponseEntity.ok(userService.updateUser(userDto, userId));
     }
 }

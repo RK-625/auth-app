@@ -10,12 +10,12 @@ import com.substring.authapp.helpers.UserHelper;
 import com.substring.authapp.repositories.RoleRepository;
 import com.substring.authapp.repositories.UserRepository;
 import com.substring.authapp.services.UserService;
-import jakarta.transaction.Transactional;
 import org.modelmapper.ModelMapper;
-import org.springframework.context.MessageSource;
-import org.springframework.context.i18n.LocaleContextHolder;
+import com.substring.authapp.helpers.MessageHelper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -25,82 +25,67 @@ import java.util.UUID;
  * Core implementation for user-related business logic and persistence.
  */
 @Service
+@RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
     private final ModelMapper modelMapper;
     private final PasswordEncoder passwordEncoder;
-    private final MessageSource messageSource;
+    private final MessageHelper messageHelper;
     private final UserHelper userHelper;
     private final RoleRepository roleRepository;
 
-    public UserServiceImpl(UserRepository userRepository,
-                           ModelMapper modelMapper,
-                           PasswordEncoder passwordEncoder,
-                           MessageSource messageSource, UserHelper userHelper, RoleRepository roleRepository) {
-        this.userRepository = userRepository;
-        this.modelMapper = modelMapper;
-        this.passwordEncoder = passwordEncoder;
-        this.messageSource = messageSource;
-        this.userHelper = userHelper;
-        this.roleRepository = roleRepository;
-    }
-
     /**
-     * Creates and persists a new ADMIN user who has special access with an encoded password from the organization side by the Root user.
+     * Creates and persists a new ADMIN user who has special access with an encoded password.
+     * This is used for internal organization-side user provisioning by a Root user.
+     * 
+     * @param userDto DTO containing the details for the new administrative account.
+     * @return DTO of the newly created admin.
      */
     @Override
     @Transactional
     public UserDto createUser(UserDto userDto) {
-        // 1. Validate business constraints (email existence, etc.)
+        // 1. Validate business constraints (e.g., email uniqueness)
         userHelper.validateUserForSignup(userDto);
 
-        // 2. Map and prepare the entity
-        User user = modelMapper.map(userDto, User.class);
-        user.setProvider(Provider.ORGANIZATION);
-        user.setPassword(passwordEncoder.encode(userDto.getPassword()));
-
-        // 3. Initialize roles set and assign default ROLE_ADMIN
-        Set<Role> roles = new HashSet<>();
-        Role defaultRole = roleRepository.findByName(UserRole.ROLE_ADMIN.name())
-                .orElseThrow(() -> new ResourceNotFoundException(msg("role.not_found")));
-        roles.add(defaultRole);
-        user.setRoles(roles);
-
-        // 4. Persist and return the new user
-        User savedUser = userRepository.save(user);
-        return modelMapper.map(savedUser, UserDto.class);
+        // 2. Build and save the entity using the centralized organization/admin template
+        return userHelper.buildAndSaveUser(userDto, Provider.ORGANIZATION, UserRole.ROLE_ADMIN);
     }
 
     /**
      * Retrieves a user by their email address.
+     * Standardizes exception handling for consistent API error responses.
      */
     @Override
     public UserDto getUserByEmail(String email) {
-        if (email == null || email.isBlank()) {
-            throw new IllegalArgumentException(msg("user.register.email_required"));
-        }
-        
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundException(msg("user.profile.not_found")));
+        User user = userHelper.findUserByEmailOrThrow(
+            email, 
+            new ResourceNotFoundException(messageHelper.getMessage("user.profile.not_found"))
+        );
         return modelMapper.map(user, UserDto.class);
     }
 
     /**
      * Updates an existing user's profile details.
+     * Employs functional updates to only modify fields present in the request.
+     * 
+     * @param userDto DTO containing the fields to update.
+     * @param userId  The unique ID of the user to be modified.
+     * @return DTO of the updated user.
      */
     @Override
     @Transactional
-    public UserDto updateUser(UserDto userDto, String userId) {
-        UUID uuid = UserHelper.parseUUID(userId);
-        User oldUser = userRepository.findById(uuid)
-                .orElseThrow(() -> new ResourceNotFoundException(msg("user.profile.not_found")));
+    public UserDto updateUser(UserDto userDto, UUID userId) {
+        User oldUser = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException(messageHelper.getMessage("user.profile.not_found")));
         
-        // Update only allowed fields
-        if (userDto.getProvider() != null) oldUser.setProvider(userDto.getProvider());
-        if (userDto.getName() != null) oldUser.setName(userDto.getName());
-        if (userDto.getImage() != null) oldUser.setImage(userDto.getImage());
-        if (userDto.getPassword() != null) oldUser.setPassword(passwordEncoder.encode(userDto.getPassword()));
+        // Use Optional.ofNullable to apply updates conditionally (Patch-like behavior)
+        java.util.Optional.ofNullable(userDto.getProvider()).ifPresent(oldUser::setProvider);
+        java.util.Optional.ofNullable(userDto.getName()).ifPresent(oldUser::setName);
+        java.util.Optional.ofNullable(userDto.getImage()).ifPresent(oldUser::setImage);
+        java.util.Optional.ofNullable(userDto.getPassword())
+                .map(passwordEncoder::encode)
+                .ifPresent(oldUser::setPassword);
         
         oldUser.setEnabled(userDto.isEnabled());
         
@@ -109,31 +94,30 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * Silent Delete a user from the system.
+     * Performs a 'Silent Delete' (Soft Delete) of a user.
+     * Instead of purging records, it disables the account to preserve data integrity and audit trails.
      */
     @Override
     @Transactional
-    public void deleteUser(String userId) {
-        UUID uuid = UserHelper.parseUUID(userId);
-        if (!userRepository.existsById(uuid)) {
-            throw new ResourceNotFoundException(msg("user.profile.not_found"));
-        }
-        userRepository.findById(uuid).ifPresent(user -> user.setEnabled(false));
+    public void deleteUser(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException(messageHelper.getMessage("user.profile.not_found")));
+        user.setEnabled(false);
     }
 
     /**
      * Retrieves a single user by their unique identifier.
      */
     @Override
-    public UserDto getUserById(String userId) {
-        UUID uuid = UserHelper.parseUUID(userId);
-        User user = userRepository.findById(uuid)
-                .orElseThrow(() -> new ResourceNotFoundException(msg("user.profile.not_found")));
+    public UserDto getUserById(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException(messageHelper.getMessage("user.profile.not_found")));
         return modelMapper.map(user, UserDto.class);
     }
 
     /**
-     * Returns a list of all registered users in the system.
+     * Returns a list of all active registered users in the system.
+     * Filters out disabled users to provide a 'clean' view of the current user base.
      */
     @Override
     public Iterable<UserDto> getAllUsers() {
@@ -144,7 +128,5 @@ public class UserServiceImpl implements UserService {
                 .toList();
     }
 
-    private String msg(String key) {
-        return messageSource.getMessage(key, null, LocaleContextHolder.getLocale());
-    }
+
 }

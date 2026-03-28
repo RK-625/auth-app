@@ -64,11 +64,12 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
         
         logger.info("Social authentication successful for principal: {}", authentication.getName());
 
+        // 1. Normalize attributes from different providers (Google, GitHub, etc.)
         Map<String, Object> attributes = fetchAttributes(authentication);
         String email = (String) attributes.get("email");
         Provider provider = (Provider) attributes.get("provider");
 
-        // 1. Sync user with database (provisioning)
+        // 2. Synchronize social user with the local database (Auto-provisioning)
         User user = userRepository.findByEmail(email).orElseGet(() -> {
             Role userRole = roleRepository.findByName(UserRole.ROLE_USER.name())
                     .orElseThrow(() -> new IllegalStateException("Default role ROLE_USER not found"));
@@ -86,25 +87,21 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
             return userRepository.save(newUser);
         });
 
-        // 2. Generate and persist refresh token
+        // 3. Convert the OAuth2 session into a stateless JWT-based session
         String accessToken = jwtService.generateAccessToken(user);
         String refreshTokenJti = UUID.randomUUID().toString();
         
-        RefreshToken refreshTokenOb = RefreshToken.builder()
-                .jti(refreshTokenJti)
-                .user(user)
-                .createdAt(Instant.now())
-                .expiresAt(Instant.now().plusSeconds(jwtService.getRefereshTtlSeconds()))
-                .revoked(false)
-                .build();
+        // 4. Persist a matching refresh token in the database for future revocation
+        RefreshToken refreshTokenOb = RefreshToken.create(user, refreshTokenJti, jwtService.getRefreshTtlSeconds());
         refreshTokenRepository.save(refreshTokenOb);
         
-        String refreshToken = jwtService.generateRefereshToken(user, refreshTokenJti);
+        String refreshToken = jwtService.generateRefreshToken(user, refreshTokenJti);
 
-        // 3. Attach cookies and headers using the helper
+        // 5. Attach tokens to the response (Secure HttpOnly cookies and headers)
         tokenHelper.generateAuthenticatedResponse(response, user, accessToken, refreshToken);
 
-        // 4. Redirect to Frontend (Port 3000 assumed for React/Angular)
+        // 6. Redirect the user back to the frontend application with the access token
+        // Assumptions: Frontend is running on localhost:3000
         String targetUrl = "http://localhost:3000/oauth2/redirect?token=" + accessToken;
         logger.info("OAuth2 flow complete. Redirecting {} to: {}", email, targetUrl);
         response.sendRedirect(targetUrl);

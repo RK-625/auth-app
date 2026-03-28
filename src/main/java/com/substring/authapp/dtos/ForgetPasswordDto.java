@@ -1,11 +1,15 @@
 package com.substring.authapp.dtos;
 
 
-import lombok.RequiredArgsConstructor;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
-@lombok.Data
-@RequiredArgsConstructor
-@lombok.Builder
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class ForgetPasswordDto {
     private String otp;
     private String email;
