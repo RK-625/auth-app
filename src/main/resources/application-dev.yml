@@ -26,10 +26,28 @@ spring:
         dialect: org.hibernate.dialect.MySQLDialect
         format_sql: true
     show-sql: true
+    defer-datasource-initialization: true
 
   sql:
     init:
       mode: always
+
+  # --- EMAIL CONFIGURATION (Gmail Example) ---
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:rk625java@gmail.com}
+    password: ${MAIL_PASSWORD:Java$123}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+        transport:
+          protocol: smtp
+        debug: true
 
 
 ### jwt settings here

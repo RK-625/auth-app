@@ -1,17 +1,14 @@
 package com.substring.authapp.security;
 
-import com.substring.authapp.dtos.TokenResponse;
-import com.substring.authapp.dtos.UserDto;
-import com.substring.authapp.entities.Provider;
-import com.substring.authapp.entities.RefreshToken;
-import com.substring.authapp.entities.User;
+import com.substring.authapp.entities.*;
+import com.substring.authapp.helpers.TokenHelper;
+import com.substring.authapp.repositories.RoleRepository;
 import com.substring.authapp.repositories.RefreshTokenRepository;
 import com.substring.authapp.repositories.UserRepository;
 import com.substring.authapp.security.provider.GithubService;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.modelmapper.ModelMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -24,6 +21,7 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.UUID;
 
@@ -36,27 +34,27 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
 
     private final Logger logger = LoggerFactory.getLogger(OAuth2SuccessHandler.class);
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
     private final JwtService jwtService;
     private final RefreshTokenRepository refreshTokenRepository;
-    private final CookieService cookieService;
-    private final ModelMapper modelMapper;
     private final GithubService githubService;
     private final OAuth2AuthorizedClientService authorizedClientService;
+    private final TokenHelper tokenHelper;
 
     public OAuth2SuccessHandler(UserRepository userRepository,
+                                RoleRepository roleRepository,
                                 JwtService jwtService,
                                 RefreshTokenRepository refreshTokenRepository,
-                                CookieService cookieService,
-                                ModelMapper modelMapper,
                                 GithubService githubService,
-                                OAuth2AuthorizedClientService authorizedClientService) {
+                                OAuth2AuthorizedClientService authorizedClientService,
+                                TokenHelper tokenHelper) {
         this.userRepository = userRepository;
+        this.roleRepository = roleRepository;
         this.jwtService = jwtService;
         this.refreshTokenRepository = refreshTokenRepository;
-        this.cookieService = cookieService;
-        this.modelMapper = modelMapper;
         this.githubService = githubService;
         this.authorizedClientService = authorizedClientService;
+        this.tokenHelper = tokenHelper;
     }
 
     @Override
@@ -70,8 +68,11 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
         String email = (String) attributes.get("email");
         Provider provider = (Provider) attributes.get("provider");
 
-        // Sync user with database (provisioning)
+        // 1. Sync user with database (provisioning)
         User user = userRepository.findByEmail(email).orElseGet(() -> {
+            Role userRole = roleRepository.findByName(UserRole.ROLE_USER.name())
+                    .orElseThrow(() -> new IllegalStateException("Default role ROLE_USER not found"));
+
             User newUser = User.builder()
                     .email(email)
                     .name((String) attributes.get("name"))
@@ -80,11 +81,12 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
                     .createdAt(Instant.now())
                     .updatedAt(Instant.now())
                     .provider(provider)
+                    .roles(new HashSet<>(java.util.List.of(userRole)))
                     .build();
             return userRepository.save(newUser);
         });
 
-        // Generate and persist refresh token
+        // 2. Generate and persist refresh token
         String accessToken = jwtService.generateAccessToken(user);
         String refreshTokenJti = UUID.randomUUID().toString();
         
@@ -99,18 +101,13 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
         
         String refreshToken = jwtService.generateRefereshToken(user, refreshTokenJti);
 
-        // Security headers and cookies
-        cookieService.attachRefreshCookie(response, refreshToken, (int) jwtService.getAccessTtlSeconds());
-        cookieService.addNoStoreHeadersToResponse(response);
+        // 3. Attach cookies and headers using the helper
+        tokenHelper.generateAuthenticatedResponse(response, user, accessToken, refreshToken);
 
-        // Prepare token response
-        TokenResponse tokenResponse = TokenResponse.of(accessToken, refreshToken, jwtService.getAccessTtlSeconds(), "Bearer", modelMapper.map(user, UserDto.class));
-        
-        // Final redirection logic could be added here
-        logger.info("OAuth2 flow complete for user: {}", email);
-        response.setStatus(HttpServletResponse.SC_OK);
-        response.setContentType("application/json");
-        response.getWriter().write("{\"status\": \"success\", \"message\": \"Authentication successful\"}");
+        // 4. Redirect to Frontend (Port 3000 assumed for React/Angular)
+        String targetUrl = "http://localhost:3000/oauth2/redirect?token=" + accessToken;
+        logger.info("OAuth2 flow complete. Redirecting {} to: {}", email, targetUrl);
+        response.sendRedirect(targetUrl);
     }
 
     /**

@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.*;
  * Provides endpoints for standard CRUD operations and search by email.
  */
 @RestController
-@RequestMapping("/api/v1/users")
+@RequestMapping("/api/v1")
 public class UserController {
 
     private final UserService userService;
@@ -23,7 +23,7 @@ public class UserController {
     /**
      * Registers a new user account.
      */
-    @PostMapping
+    @PostMapping("/root/create")
     public ResponseEntity<UserDto> createUser(@RequestBody UserDto userDto) {
         return ResponseEntity.status(HttpStatus.CREATED).body(userService.createUser(userDto));
     }
@@ -31,7 +31,7 @@ public class UserController {
     /**
      * Returns a list of all users in the system.
      */
-    @GetMapping
+    @GetMapping("/admin/users")
     public ResponseEntity<Iterable<UserDto>> getAllUsers() {
         return ResponseEntity.ok(userService.getAllUsers());
     }
@@ -39,7 +39,7 @@ public class UserController {
     /**
      * Retrieves a single user profile by their unique ID.
      */
-    @GetMapping("/{userId}")
+    @GetMapping("/admin/users/{userId}")
     public ResponseEntity<UserDto> getUser(@PathVariable String userId) {
         return ResponseEntity.ok(userService.getUserById(userId));
     }
@@ -47,7 +47,7 @@ public class UserController {
     /**
      * Finds a user profile by their email address.
      */
-    @GetMapping("/email/{emailId}")
+    @GetMapping("admin/email/{emailId}")
     public ResponseEntity<UserDto> getUserByEmail(@PathVariable String emailId) {
         return ResponseEntity.ok(userService.getUserByEmail(emailId));
     }
@@ -55,7 +55,7 @@ public class UserController {
     /**
      * Permanently deletes a user account from the system.
      */
-    @DeleteMapping("/{userId}")
+    @DeleteMapping("root/delete/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteUserById(@PathVariable String userId) {
         userService.deleteUser(userId);
@@ -64,7 +64,7 @@ public class UserController {
     /**
      * Updates profile information for an existing user.
      */
-    @PutMapping("/{userId}")
+    @PutMapping("update/user/{userId}")
     public ResponseEntity<UserDto> updateUser(@PathVariable String userId, @RequestBody UserDto userDto) {
         return ResponseEntity.ok(userService.updateUser(userDto, userId));
     }

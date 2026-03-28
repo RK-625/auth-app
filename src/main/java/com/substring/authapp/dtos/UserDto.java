@@ -1,5 +1,6 @@
 package com.substring.authapp.dtos;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.substring.authapp.entities.Provider;
 import lombok.*;
 
@@ -20,12 +21,13 @@ import java.util.UUID;
 public class UserDto implements  Serializable {
     private UUID id;
     private String email;
-    private String name;
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
+    private String name;
     private String image;
-    private boolean enabled = true;
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();
     private Provider provider = Provider.LOCAL;
     private Set<RoleDto> roles = new HashSet<>();
+    private boolean enabled = true;
 }

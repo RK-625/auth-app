@@ -2,9 +2,12 @@ package com.substring.authapp.services.impl;
 
 import com.substring.authapp.dtos.UserDto;
 import com.substring.authapp.entities.Provider;
+import com.substring.authapp.entities.Role;
 import com.substring.authapp.entities.User;
+import com.substring.authapp.entities.UserRole;
 import com.substring.authapp.exceptions.ResourceNotFoundException;
 import com.substring.authapp.helpers.UserHelper;
+import com.substring.authapp.repositories.RoleRepository;
 import com.substring.authapp.repositories.UserRepository;
 import com.substring.authapp.services.UserService;
 import jakarta.transaction.Transactional;
@@ -14,6 +17,8 @@ import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -26,35 +31,43 @@ public class UserServiceImpl implements UserService {
     private final ModelMapper modelMapper;
     private final PasswordEncoder passwordEncoder;
     private final MessageSource messageSource;
+    private final UserHelper userHelper;
+    private final RoleRepository roleRepository;
 
-    public UserServiceImpl(UserRepository userRepository, 
-                           ModelMapper modelMapper, 
-                           PasswordEncoder passwordEncoder, 
-                           MessageSource messageSource) {
+    public UserServiceImpl(UserRepository userRepository,
+                           ModelMapper modelMapper,
+                           PasswordEncoder passwordEncoder,
+                           MessageSource messageSource, UserHelper userHelper, RoleRepository roleRepository) {
         this.userRepository = userRepository;
         this.modelMapper = modelMapper;
         this.passwordEncoder = passwordEncoder;
         this.messageSource = messageSource;
+        this.userHelper = userHelper;
+        this.roleRepository = roleRepository;
     }
 
     /**
-     * Creates and persists a new user with an encoded password.
+     * Creates and persists a new ADMIN user who has special access with an encoded password from the organization side by the Root user.
      */
     @Override
     @Transactional
     public UserDto createUser(UserDto userDto) {
-        if (userDto.getEmail() == null || userDto.getEmail().isBlank()) {
-            throw new IllegalArgumentException(msg("user.register.email_required"));
-        }
-        
-        if (userRepository.existsByEmail(userDto.getEmail())) {
-            throw new IllegalArgumentException(msg("user.register.email_exists"));
-        }
+        // 1. Validate business constraints (email existence, etc.)
+        userHelper.validateUserForSignup(userDto);
 
+        // 2. Map and prepare the entity
         User user = modelMapper.map(userDto, User.class);
-        user.setProvider(userDto.getProvider() == null ? Provider.LOCAL : userDto.getProvider());
+        user.setProvider(Provider.ORGANIZATION);
         user.setPassword(passwordEncoder.encode(userDto.getPassword()));
-        
+
+        // 3. Initialize roles set and assign default ROLE_ADMIN
+        Set<Role> roles = new HashSet<>();
+        Role defaultRole = roleRepository.findByName(UserRole.ROLE_ADMIN.name())
+                .orElseThrow(() -> new ResourceNotFoundException(msg("role.not_found")));
+        roles.add(defaultRole);
+        user.setRoles(roles);
+
+        // 4. Persist and return the new user
         User savedUser = userRepository.save(user);
         return modelMapper.map(savedUser, UserDto.class);
     }
@@ -96,7 +109,7 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * Permanently removes a user from the system.
+     * Silent Delete a user from the system.
      */
     @Override
     @Transactional
@@ -105,7 +118,7 @@ public class UserServiceImpl implements UserService {
         if (!userRepository.existsById(uuid)) {
             throw new ResourceNotFoundException(msg("user.profile.not_found"));
         }
-        userRepository.deleteUserById(uuid);
+        userRepository.findById(uuid).ifPresent(user -> user.setEnabled(false));
     }
 
     /**
@@ -126,6 +139,7 @@ public class UserServiceImpl implements UserService {
     public Iterable<UserDto> getAllUsers() {
         return userRepository.findAll()
                 .stream()
+                .filter(User::isEnabled)
                 .map(u -> modelMapper.map(u, UserDto.class))
                 .toList();
     }

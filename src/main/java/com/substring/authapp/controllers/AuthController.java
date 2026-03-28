@@ -1,20 +1,23 @@
 package com.substring.authapp.controllers;
 
-import com.substring.authapp.dtos.LoginRequest;
-import com.substring.authapp.dtos.RefreshTokenRequest;
-import com.substring.authapp.dtos.TokenResponse;
-import com.substring.authapp.dtos.UserDto;
+import com.substring.authapp.dtos.*;
 import com.substring.authapp.entities.RefreshToken;
+import com.substring.authapp.entities.ResetPasswordObject;
 import com.substring.authapp.entities.User;
+import com.substring.authapp.helpers.TokenHelper;
 import com.substring.authapp.helpers.UserHelper;
 import com.substring.authapp.repositories.RefreshTokenRepository;
+import com.substring.authapp.repositories.ResetPasswordObjectRepository;
 import com.substring.authapp.repositories.UserRepository;
 import com.substring.authapp.security.CookieService;
 import com.substring.authapp.security.JwtService;
 import com.substring.authapp.services.AuthService;
+import com.substring.authapp.services.EmailService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.slf4j.Logger;
 import org.springframework.context.MessageSource;
@@ -27,10 +30,8 @@ import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
 import java.util.Arrays;
@@ -43,6 +44,7 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/api/v1/auth")
+@RequiredArgsConstructor
 public class AuthController {
 
     private final AuthService authService;
@@ -52,26 +54,12 @@ public class AuthController {
     private final JwtService jwtService;
     private final CookieService cookieService;
     private final ModelMapper modelMapper;
+    private final TokenHelper tokenHelper;
     private final MessageSource messageSource;
     private final Logger logger = org.slf4j.LoggerFactory.getLogger(AuthController.class);
-
-    public AuthController(AuthService authService,
-                          AuthenticationManager authenticationManager,
-                          UserRepository userRepository,
-                          RefreshTokenRepository refreshTokenRepository,
-                          JwtService jwtService,
-                          CookieService cookieService,
-                          ModelMapper modelMapper,
-                          MessageSource messageSource) {
-        this.authService = authService;
-        this.authenticationManager = authenticationManager;
-        this.userRepository = userRepository;
-        this.refreshTokenRepository = refreshTokenRepository;
-        this.jwtService = jwtService;
-        this.cookieService = cookieService;
-        this.modelMapper = modelMapper;
-        this.messageSource = messageSource;
-    }
+    private final ResetPasswordObjectRepository resetPasswordObjectRepository;
+    private final EmailService emailService;
+    private final PasswordEncoder passwordEncoder;
 
     /**
      * Authenticates a user and generates access and refresh tokens.
@@ -82,7 +70,7 @@ public class AuthController {
         authenticate(loginRequest);
         
         User user = userRepository.findByEmail(loginRequest.email())
-                .orElseThrow(() -> new BadCredentialsException(msg("auth.login.invalid_credentials")));
+                .orElseThrow(() -> new BadCredentialsException(msg("auth.login.invalid_email")));
         
         if (!user.isEnabled()) {
             throw new DisabledException(msg("auth.user.disabled")); 
@@ -90,10 +78,10 @@ public class AuthController {
 
         String accessToken = jwtService.generateAccessToken(user);
         
-        // Generate and persist refresh token for rotation mechanism
-        String refereshTokenJti = UUID.randomUUID().toString();
+        // Generate and persist refresh token for a rotation mechanism
+        String refreshTokenJti = UUID.randomUUID().toString();
         RefreshToken refreshTokenOb = RefreshToken.builder()
-                .jti(refereshTokenJti)
+                .jti(refreshTokenJti)
                 .user(user)
                 .createdAt(Instant.now())
                 .expiresAt(Instant.now().plusSeconds(jwtService.getRefereshTtlSeconds()))
@@ -101,12 +89,10 @@ public class AuthController {
                 .build();
         refreshTokenRepository.save(refreshTokenOb);
         
-        String refreshToken = jwtService.generateRefereshToken(user, refereshTokenJti);
+        String refreshToken = jwtService.generateRefereshToken(user, refreshTokenJti);
 
-        cookieService.attachRefreshCookie(response, refreshToken, (int) jwtService.getAccessTtlSeconds());
-        cookieService.addNoStoreHeadersToResponse(response);
-        
-        TokenResponse tokenResponse = TokenResponse.of(accessToken, refreshToken, jwtService.getAccessTtlSeconds(), "Bearer", modelMapper.map(user, UserDto.class));
+        // Generate response using the helper
+        TokenResponse tokenResponse = tokenHelper.generateAuthenticatedResponse(response, user, accessToken, refreshToken);
         return ResponseEntity.ok(tokenResponse);
     }
 
@@ -129,14 +115,14 @@ public class AuthController {
     public ResponseEntity<TokenResponse> refreshToken(@RequestBody(required = false) RefreshTokenRequest body, HttpServletResponse response, HttpServletRequest request){
 
         String refreshToken = readRefreshTokenRequest(body, request)
-                .orElseThrow(() -> new BadCredentialsException(msg("token.refresh.invalid")));
+                .orElseThrow(() -> new BadCredentialsException(msg("token.refresh.not_present")));
 
         if (!jwtService.isRefreshToken(refreshToken)) {
             throw new BadCredentialsException(msg("token.refresh.invalid"));
         }
 
         String jti = jwtService.getJti(refreshToken);
-        UUID useriD = jwtService.getUseriD(refreshToken);
+        UUID userId = jwtService.getUseriD(refreshToken);
 
         RefreshToken refreshTokenOb = refreshTokenRepository.findByJti(jti)
                 .orElseThrow(() -> new BadCredentialsException(msg("token.refresh.not_found_db")));
@@ -144,7 +130,7 @@ public class AuthController {
         // Security checks for token rotation
         if (refreshTokenOb.isRevoked()) throw new BadCredentialsException(msg("token.refresh.revoked"));
         if (refreshTokenOb.getExpiresAt().isBefore(Instant.now())) throw new BadCredentialsException(msg("token.refresh.expired"));
-        if (!refreshTokenOb.getUser().getId().equals(useriD)) throw new BadCredentialsException(msg("token.refresh.user_mismatch"));
+        if (!refreshTokenOb.getUser().getId().equals(userId)) throw new BadCredentialsException(msg("token.refresh.user_mismatch"));
 
         // Revoke current token and issue new pair (Token Rotation)
         refreshTokenOb.setRevoked(true);
@@ -164,10 +150,13 @@ public class AuthController {
                 .build();
         refreshTokenRepository.save(newRefreshTokenOb);
 
-        cookieService.attachRefreshCookie(response, newRefreshToken, (int) jwtService.getAccessTtlSeconds());
-        cookieService.addNoStoreHeadersToResponse(response);
-        
-        TokenResponse tokenResponse = TokenResponse.of(newAccessToken, newRefreshToken, jwtService.getAccessTtlSeconds(), "Bearer", modelMapper.map(refreshTokenOb.getUser(), UserDto.class));
+        // Generate response using the helper
+        TokenResponse tokenResponse = tokenHelper.generateAuthenticatedResponse(
+                response, 
+                refreshTokenOb.getUser(), 
+                newAccessToken, 
+                newRefreshToken
+        );
         return ResponseEntity.ok(tokenResponse);
     }
 
@@ -195,14 +184,14 @@ public class AuthController {
      */
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(@RequestBody(required = false) RefreshTokenRequest body, HttpServletRequest request, HttpServletResponse response){
-        String refreshtoken = readRefreshTokenRequest(body, request)
-                .orElseThrow(() -> new BadCredentialsException(msg("token.refresh.invalid")));
+        String refreshToken = readRefreshTokenRequest(body, request)
+                .orElseThrow(() -> new BadCredentialsException(msg("token.refresh.not_present")));
         
-        if (!jwtService.isRefreshToken(refreshtoken)) {
+        if (!jwtService.isRefreshToken(refreshToken)) {
             throw new BadCredentialsException(msg("token.refresh.invalid"));
         }
         
-        String jti = jwtService.getJti(refreshtoken);
+        String jti = jwtService.getJti(refreshToken);
         RefreshToken refreshTokenOb = refreshTokenRepository.findByJti(jti)
                 .orElseThrow(() -> new BadCredentialsException(msg("token.refresh.not_found_db")));
         
@@ -219,11 +208,59 @@ public class AuthController {
     /**
      * Creates a new user account.
      */
-    @PostMapping("/register")
-    public ResponseEntity<UserDto> registerUser(@RequestBody UserDto userDto) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(authService.registerUser(userDto));
+    @PostMapping("/signup")
+    public ResponseEntity<UserDto> signUp(@RequestBody UserDto userDto) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(authService.signupUser(userDto));
     }
 
+    @GetMapping("/forget/email")
+    public ResponseEntity<ForgetPasswordDto> forgetPasswordFirst(@RequestBody ForgetPasswordDto forgetPasswordDto) {
+
+        if (forgetPasswordDto.getEmail() == null || forgetPasswordDto.getEmail().isBlank()) {
+            throw new IllegalArgumentException(msg("auth.forget.email_required"));
+        }
+        User user = userRepository.findByEmail(forgetPasswordDto.getEmail()).orElseThrow(() -> new BadCredentialsException(msg("auth.forget.email_not_found")));
+        var keys = UserHelper.generateSecureOtpAndToken();
+        while(resetPasswordObjectRepository.existsByUserAndOtpAndResetToken(user, keys.getFirst(), keys.getSecond())){
+            // GENERATE A UNIQUE OTP
+            keys = UserHelper.generateSecureOtpAndToken();
+        }
+        ResetPasswordObject resetPasswordObject = new ResetPasswordObject(user, keys.getFirst(), keys.getSecond());
+        resetPasswordObjectRepository.save(resetPasswordObject);
+        emailService.sendPassWordResetOtp(user.getEmail(), keys.getFirst());
+        return ResponseEntity.ok(ForgetPasswordDto.builder().email(user.getEmail()).build());
+    }
+
+    @GetMapping("/forget/otp")
+    @Transactional
+    public ResponseEntity<ForgetPasswordDto> forgetPasswordSecond(@RequestBody ForgetPasswordDto forgetPasswordDto) {
+        if (forgetPasswordDto.getEmail() == null || forgetPasswordDto.getEmail().isBlank()) {
+            throw new IllegalArgumentException(msg("auth.forget.email_required"));
+        }
+        User user = userRepository.findByEmail(forgetPasswordDto.getEmail()).orElseThrow(() -> new BadCredentialsException(msg("auth.forget.email_not_found")));
+        ResetPasswordObject resetPasswordObject = resetPasswordObjectRepository.findByUserAndOtpAndUsedFalseAndExpiresAtGreaterThanEqual(user, forgetPasswordDto.getOtp(), Instant.now()).orElseThrow(() -> new BadCredentialsException("auth.forget.otp_invalid"));
+        // HERE means the opt is matching hence send the reset token and set the used to true
+        resetPasswordObject.setUsed(true);
+        resetPasswordObject.setExpiresAt(Instant.now().plusSeconds(60));
+        resetPasswordObjectRepository.save(resetPasswordObject);
+        return ResponseEntity.ok(ForgetPasswordDto.builder().email(user.getEmail()).resetToken(forgetPasswordDto.getResetToken()).build());
+    }
+
+    @GetMapping("/forget/reset")
+    @Transactional
+    public ResponseEntity<ForgetPasswordDto> forgetPasswordThird(@RequestBody ForgetPasswordDto forgetPasswordDto) {
+        if (forgetPasswordDto.getEmail() == null || forgetPasswordDto.getEmail().isBlank()) {
+            throw new IllegalArgumentException(msg("auth.forget.email_required"));
+        }
+        User user = userRepository.findByEmail(forgetPasswordDto.getEmail()).orElseThrow(() -> new BadCredentialsException(msg("auth.forget.email_not_found")));
+        boolean valid = resetPasswordObjectRepository.existsByUserAndResetTokenAndExpiresAtGreaterThan(user, UserHelper.parseUUID(forgetPasswordDto.getResetToken()), Instant.now());
+        if(valid){
+            user.setPassword(passwordEncoder.encode(forgetPasswordDto.getPassword()));
+            userRepository.save(user);
+            return ResponseEntity.ok(ForgetPasswordDto.builder().email(user.getEmail()).build());
+        }
+        return ResponseEntity.badRequest().body(ForgetPasswordDto.builder().build());
+    }
     /**
      * Helper to retrieve localized messages from the central library.
      */

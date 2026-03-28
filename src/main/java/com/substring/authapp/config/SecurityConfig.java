@@ -63,6 +63,9 @@ public class SecurityConfig {
                             "/login/**",
                             "/error"
                         ).permitAll()
+                        .requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "ROOT")
+                        .requestMatchers("/api/v1/root/**").hasRole("ROOT")
+                        .requestMatchers("/api/vi/update/user/**").authenticated()
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2

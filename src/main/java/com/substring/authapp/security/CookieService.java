@@ -36,8 +36,8 @@ public class CookieService {
     /**
      * Attaches a secure refresh token cookie to the HTTP response.
      */
-    public void attachRefreshCookie(HttpServletResponse response, String value, int maxAge) {
-        ResponseCookie.ResponseCookieBuilder cookieBuilder = ResponseCookie.from(refreshTokenCookieName, value)
+    public void attachRefreshCookie(HttpServletResponse response, String refreshJWTToken, int maxAge) {
+        ResponseCookie.ResponseCookieBuilder cookieBuilder = ResponseCookie.from(refreshTokenCookieName, refreshJWTToken)
                 .httpOnly(cookieHttpOnly)
                 .secure(cookieSecure)
                 .path("/")
