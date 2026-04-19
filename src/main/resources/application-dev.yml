@@ -5,8 +5,8 @@ server:
 spring:
   datasource:
     url: jdbc:mysql://localhost:3306/auth_app_yt
-    username: root
-    password: root
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
 #    hikari:
 #      pool-name: HikariCP
 #      max-lifetime: 1800000
@@ -27,7 +27,6 @@ spring:
         format_sql: true
     show-sql: true
     defer-datasource-initialization: true
-
   sql:
     init:
       mode: always
@@ -36,8 +35,8 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    username: ${MAIL_USERNAME:rk625java@gmail.com}
-    password: ${MAIL_PASSWORD:Java$123}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
     properties:
       mail:
         smtp:
@@ -49,22 +48,21 @@ spring:
           protocol: smtp
         debug: true
 
-
 ### jwt settings here
   security:
       oauth2:
         client:
           registration:
             google:
-              client-id: ${GOOGLE_CLIENT_ID:51768911754-83u3lb28ue0mdva86c7c2lmdn53geqt6.apps.googleusercontent.com}
-              client-secret: ${GOOGLE_CLIENT_SECRET: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}
+              client-id: ${GOOGLE_CLIENT_ID}
+              client-secret: ${GOOGLE_CLIENT_SECRET}
               scope:
                 - email
                 - profile
                 - openid
             github:
-              client-id: ${GITHUB_CLIENT_ID:Ov23li0NfcgfQ0WHteKQ}
-              client-secret: ${GITHUB_CLIENT_SECRET:6e0b9863c1e821b7adccfc8135b6cc291650db5b}
+              client-id: ${GITHUB_CLIENT_ID}
+              client-secret: ${GITHUB_CLIENT_SECRET}
               scope:
                 - user:email
                 - read:user
@@ -72,15 +70,15 @@ spring:
             github:
               authorization-uri: https://github.com/login/oauth/authorize?prompt=consent
 
-
+### jwt settings here
 security:
     jwt:
-      secret: ${JWT_SECRET:mmo,F{4b2C-x7y+xMc#}am{sEBmf0{sSL?^ii#K=y(8gsKnh#qaab^|[W--hdoPZ>$eP*i([K&)jfo%,ovkZ=S}
-      issuer: ${JWT_ISSUER:api.substring.com}
-      acess-ttl-seconds: ${JWT_ACCESS_TTL_SECONDS:3600}
-      refresh-ttl-seconds: ${JWT_REFRESH_TTL_SECONDS:86400}
-      refresh-token-cookie-name: ${JWT_REFRESH_COOKIE_NAME:refreshToken}
-      cookie-secure: ${JWT_COOKIE_SECURE:true}
-      cookie-http-only: ${JWT_COOKIE_HTTP_ONLY:true}
-      cookie-same-site: ${JWT_COOKIE_SAME_SITE:lax}
-      cookie-domain: ${JWT_COOKIE_DOMAIN:localhost}
+      secret: ${JWT_SECRET}
+      issuer: ${JWT_ISSUER}
+      acess-ttl-seconds: ${JWT_ACCESS_TTL_SECONDS}
+      refresh-ttl-seconds: ${JWT_REFRESH_TTL_SECONDS}
+      refresh-token-cookie-name: ${JWT_REFRESH_COOKIE_NAME}
+      cookie-secure: ${JWT_COOKIE_SECURE}
+      cookie-http-only: ${JWT_COOKIE_HTTP_ONLY}
+      cookie-same-site: ${JWT_COOKIE_SAME_SITE}
+      cookie-domain: ${JWT_COOKIE_DOMAIN}

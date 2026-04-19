@@ -18,8 +18,38 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Service for generating, parsing, and validating JSON Web Tokens (JWT).
- * Manages both short-lived access tokens and long-lived refresh tokens.
+ * <h1>JWT Operations Engine</h1>
+ *
+ * <p>Responsible for the lifecycle of JSON Web Tokens (JWT), providing utilities for 
+ * token generation, cryptographic parsing, and validation. It centralizes all 
+ * security-sensitive logic related to identity token processing.</p>
+ *
+ * <p><b>Implementation Workflow:</b>
+ * 1. <b>Cryptographic Provisioning:</b> Initializes signing keys from secure configurations.
+ * 2. <b>Token Issuance:</b> Generates signed Access and Refresh tokens with specific claims.
+ * 3. <b>Integrity Verification:</b> Parses and validates tokens against tampering and expiration.
+ * </p>
+ *
+ * <p><b>Behind the Scenes:</b>
+ * This service utilizes the <b>jjwt</b> library to implement the <b>HMAC SHA-512</b> 
+ * algorithm for signing tokens. It integrates with Spring's {@code @Value} to 
+ * load security configurations and provides the cryptographic foundation for 
+ * the {@link JwtAuthenticationFilter}.</p>
+ *
+ * <p><b>Design Rationale:</b>
+ * Employs a <b>Dual-Token Architecture</b>:
+ * <ul>
+ *   <li><b>Access Tokens:</b> Short-lived and stateless, minimizing the impact of 
+ *       token theft.</li>
+ *   <li><b>Refresh Tokens:</b> Long-lived and stateful (linked to database), enabling 
+ *       precise revocation control and token rotation.</li>
+ * </ul>
+ * This balance ensures high performance through statelessness while maintaining 
+ * the ability to terminate compromised sessions.
+ * </p>
+ *
+ * @author Gemini CLI
+ * @see com.substring.authapp.security.JwtAuthenticationFilter
  */
 @Service
 @Getter
@@ -30,6 +60,19 @@ public class JwtService {
     private final long refreshTtlSeconds;
     private final String issuer;
 
+    /**
+     * Initializes the service with cryptographic parameters.
+     *
+     * <p><b>Behind the Scenes:</b>
+     * The {@link SecretKey} is derived from the configured secret string using 
+     * {@code Keys.hmacShaKeyFor()}. This key is then used for all subsequent 
+     * signing and verification operations, ensuring consistency across the application.</p>
+     *
+     * @param secretKey The raw HMAC secret (must be at least 64 bytes for HS512).
+     * @param accessTtlSeconds Expiration time for access tokens.
+     * @param refreshTtlSeconds Expiration time for refresh tokens.
+     * @param issuer The entity that issues the tokens (identifies the server).
+     */
     public JwtService(
             @Value("${security.jwt.secret}") String secretKey,
             @Value("${security.jwt.acess-ttl-seconds}") long accessTtlSeconds,
@@ -43,11 +86,22 @@ public class JwtService {
     }
 
     /**
-     * Generates a short-lived access token containing user identity and roles.
-     * Access tokens are used for stateless authentication on every request.
-     * 
-     * @param user The user entity for whom the token is generated.
-     * @return A signed JWT string containing the user ID, email, and roles.
+     * Creates a signed Access Token for user authorization.
+     *
+     * <p><b>Implementation Workflow:</b>
+     * 1. Collects user metadata (UUID, email, roles).
+     * 2. Sets standard claims: {@code sub} (Subject), {@code iss} (Issuer), {@code iat} (Issued At), and {@code exp} (Expiration).
+     * 3. Adds custom claims: {@code email}, {@code roles}, and {@code typ} (set to 'access').
+     * 4. Signs the payload using the HS512 algorithm and the private secret key.
+     * </p>
+     *
+     * <p><b>Behind the Scenes:</b>
+     * The inclusion of roles in the Access Token allows the {@link JwtAuthenticationFilter} 
+     * to populate authorities without an additional database query for every request, 
+     * significantly improving API throughput.</p>
+     *
+     * @param user The user for whom the token is generated.
+     * @return A compact, signed JWT string.
      */
     public String generateAccessToken(User user) {
         Instant now = Instant.now();
@@ -70,12 +124,21 @@ public class JwtService {
     }
 
     /**
-     * Generates a long-lived refresh token for renewing access tokens.
-     * Refresh tokens contain minimal claims to maximize security and reduce token size.
-     * 
-     * @param user The user entity for whom the token is generated.
-     * @param jti  The unique token identifier used to match the token in the database.
-     * @return A signed JWT string containing the user ID and the specific JTI.
+     * Creates a signed Refresh Token for session extension.
+     *
+     * <p><b>Implementation Workflow:</b>
+     * 1. Uses the provided JTI (JWT ID) which corresponds to a database record.
+     * 2. Sets the {@code typ} claim to 'refresh' to prevent misuse as an access token.
+     * 3. Signs the token with a longer expiration period.
+     * </p>
+     *
+     * <p><b>Design Rationale:</b>
+     * Refresh tokens contain minimal information. This reduces the risk of sensitive 
+     * data exposure if a refresh token (which has a longer life) is intercepted.</p>
+     *
+     * @param user The user.
+     * @param jti The unique identifier linked to the persistent token record.
+     * @return A signed JWT string.
      */
     public String generateRefreshToken(User user, String jti) {
         Instant now = Instant.now();
@@ -91,52 +154,56 @@ public class JwtService {
     }
 
     /**
-     * Parses and validates a JWT string against the configured signing key.
-     * This method verifies the signature, issuer, and expiration.
-     * 
-     * @param token The JWT string to parse.
-     * @return A Jws object containing the verified claims.
-     * @throws io.jsonwebtoken.JwtException if validation fails (expired, malformed, or invalid signature).
+     * Parses and cryptographically validates a JWT string.
+     *
+     * <p><b>Behind the Scenes:</b>
+     * The parser verifies the HMAC signature using the service's secret key. If the 
+     * token was tampered with, expired, or signed with a different key, the library 
+     * will throw an appropriate {@link JwtException}.</p>
+     *
+     * @param token The raw JWT string.
+     * @return A {@link Jws} object containing the verified claims.
+     * @throws ExpiredJwtException If the current time is after the {@code exp} claim.
+     * @throws JwtException If the token is malformed or the signature is invalid.
      */
     public Jws<Claims> parse(String token) {
         return Jwts.parser().verifyWith(key).build().parseSignedClaims(token);
     }
 
     /**
-     * Checks if the provided token is specifically an access token.
-     * 
-     * @param token The JWT string to check.
-     * @return true if the token's 'typ' claim is 'access'.
+     * Verifies if the token is a designated 'access' token.
+     *
+     * @param token The JWT string.
+     * @return {@code true} if the {@code typ} claim is 'access'.
      */
     public boolean isAccessToken(String token) {
         return "access".equals(parse(token).getPayload().get("typ"));
     }
 
     /**
-     * Checks if the provided token is specifically a refresh token.
-     * 
-     * @param token The JWT string to check.
-     * @return true if the token's 'typ' claim is 'refresh'.
+     * Verifies if the token is a designated 'refresh' token.
+     *
+     * @param token The JWT string.
+     * @return {@code true} if the {@code typ} claim is 'refresh'.
      */
     public boolean isRefreshToken(String token) {
         return "refresh".equals(parse(token).getPayload().get("typ"));
     }
 
     /**
-     * Extracts the persistent User ID from the token's subject claim.
-     * 
-     * @param token The JWT string to extract from.
-     * @return The UUID of the user.
+     * Extracts the User ID from the token's subject claim.
+     *
+     * @param token The JWT string.
+     * @return The User's UUID.
      */
     public UUID getUseriD(String token) {
         return UUID.fromString(parse(token).getPayload().getSubject());
     }
 
     /**
-     * Extracts the unique Token Identifier (JTI) from the token.
-     * This ID is used to manage token revocation in the database.
-     * 
-     * @param token The JWT string to extract from.
+     * Extracts the JWT ID (JTI) from the token.
+     *
+     * @param token The JWT string.
      * @return The JTI string.
      */
     public String getJti(String token) {

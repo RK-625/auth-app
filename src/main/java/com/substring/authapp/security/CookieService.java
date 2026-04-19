@@ -8,8 +8,35 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Service;
 
 /**
- * Service to manage the lifecycle of security cookies, specifically for refresh tokens.
- * Handles the creation, clearing, and security configuration of cookies.
+ * <h1>Secure Cookie Management Center</h1>
+ *
+ * <p>Centralizes the lifecycle management of HTTP cookies used for security-sensitive 
+ * data, specifically the long-lived JWT Refresh Tokens. It ensures that all cookies 
+ * emitted by the application adhere to strict security headers.</p>
+ *
+ * <p><b>Implementation Workflow:</b>
+ * 1. <b>Cookie Provisioning:</b> Constructs standardized {@link ResponseCookie} objects with secure defaults.
+ * 2. <b>Response Injection:</b> Manages the addition of {@code Set-Cookie} headers to the outgoing response.
+ * 3. <b>Security Policy Enforcement:</b> Applies HttpOnly, Secure, and SameSite attributes globally.
+ * </p>
+ *
+ * <p><b>Behind the Scenes:</b>
+ * This service utilizes Spring's {@link ResponseCookie} to build standardized, 
+ * immutable cookie objects. It integrates with {@link HttpServletResponse} 
+ * to inject the {@code Set-Cookie} header into outgoing HTTP responses, 
+ * ensuring that the browser receives and stores tokens according to the 
+ * configured security policy.</p>
+ *
+ * <p><b>Design Rationale:</b>
+ * Storing Refresh Tokens in <b>HttpOnly</b> cookies provides a critical defense 
+ * against <b>Cross-Site Scripting (XSS)</b> attacks by preventing client-side 
+ * JavaScript from accessing the token. Additionally, the <b>SameSite</b> attribute 
+ * mitigates <b>Cross-Site Request Forgery (CSRF)</b> by controlling cross-origin 
+ * cookie transmission.</p>
+ *
+ * @author Gemini CLI
+ * @see com.substring.authapp.controllers.AuthController
+ * @see org.springframework.http.ResponseCookie
  */
 @Service
 @Getter
@@ -35,10 +62,16 @@ public class CookieService {
 
     /**
      * Attaches a secure refresh token cookie to the HTTP response.
-     * 
-     * @param response      The HTTP response to attach the cookie to.
-     * @param refreshJWTToken The actual refresh token string.
-     * @param maxAge        The time-to-live for the cookie in seconds.
+     *
+     * <p><b>Implementation Workflow:</b>
+     * 1. Constructs a {@link ResponseCookie} using the provided token and TTL.
+     * 2. Applies global security attributes (HttpOnly, Secure, SameSite).
+     * 3. Adds the {@code Set-Cookie} header to the {@link HttpServletResponse}.
+     * </p>
+     *
+     * @param response The response to which the cookie will be attached.
+     * @param refreshJWTToken The raw JWT refresh token string.
+     * @param maxAge The duration (in seconds) the cookie should remain valid in the browser.
      */
     public void attachRefreshCookie(HttpServletResponse response, String refreshJWTToken, int maxAge) {
         ResponseCookie cookie = buildCookieBase(refreshJWTToken, maxAge);
@@ -46,9 +79,20 @@ public class CookieService {
     }
 
     /**
-     * Clears the refresh token cookie by setting its value to empty and max-age to zero.
-     * 
-     * @param response The HTTP response to attach the cleared cookie to.
+     * Instructs the browser to remove the refresh token cookie.
+     *
+     * <p><b>Implementation Workflow:</b>
+     * 1. Creates a new cookie with the same name but an empty value.
+     * 2. Sets the {@code Max-Age} to 0, signaling immediate expiration.
+     * 3. Attaches this "clearing" cookie to the response.
+     * </p>
+     *
+     * <p><b>Behind the Scenes:</b>
+     * Browsers do not allow the server to "delete" a cookie directly. Instead, 
+     * the server must overwrite the existing cookie with an expired version. 
+     * The browser then automatically removes the cookie from its storage.</p>
+     *
+     * @param response The response used to communicate the deletion to the client.
      */
     public void clearRefreshCookie(HttpServletResponse response) {
         ResponseCookie cookie = buildCookieBase("", 0);
@@ -56,8 +100,11 @@ public class CookieService {
     }
 
     /**
-     * Internal helper to build the standardized cookie structure for both setting and clearing.
-     * Applies security constraints like HttpOnly, Secure, SameSite, and Domain.
+     * Internal factory for creating standardized {@link ResponseCookie} instances.
+     *
+     * @param value The value to store in the cookie.
+     * @param maxAge TTL in seconds.
+     * @return A configured {@link ResponseCookie} ready for transmission.
      */
     private ResponseCookie buildCookieBase(String value, long maxAge) {
         ResponseCookie.ResponseCookieBuilder cookieBuilder = ResponseCookie.from(refreshTokenCookieName, value)
@@ -75,7 +122,15 @@ public class CookieService {
     }
 
     /**
-     * Adds Cache-Control headers to prevent sensitive authentication data from being cached.
+     * Configures headers to prevent browser caching of sensitive responses.
+     *
+     * <p><b>Behind the Scenes:</b>
+     * Sets {@code Cache-Control: no-store} and {@code Pragma: no-cache}. This 
+     * ensures that authentication-related data is never written to disk by the 
+     * browser or intermediary proxy servers, protecting against information 
+     * leakage from shared computers or caches.</p>
+     *
+     * @param response The HTTP response to secure.
      */
     public void addNoStoreHeadersToResponse(HttpServletResponse response) {
         response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");

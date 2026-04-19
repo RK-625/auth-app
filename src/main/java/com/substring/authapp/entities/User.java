@@ -13,9 +13,43 @@ import java.time.Instant;
 import java.util.*;
 
 /**
- * Entity representing a User in the system.
- * Implements {@link UserDetails} for Spring Security integration,
- * providing authentication and authorization capabilities.
+ * <h1>Core Identity Domain Entity</h1>
+ *
+ * <p>Represents a registered participant in the authentication system. This entity 
+ * serves as the primary principal for all security operations and implements the 
+ * mandatory {@link UserDetails} contract for Spring Security.</p>
+ *
+ * <p><b>Implementation Workflow:</b>
+ * 1. Initialized during registration or social login (JIT Provisioning).
+ * 2. Persisted in the {@code users} table with a cryptographically hashed password.
+ * 3. Loaded by the {@code UserDetailsService} during the authentication handshake.
+ * 4. Referenced by {@link RefreshToken} and {@link Role} entities to build the security context.
+ * </p>
+ *
+ * <p><b>Behind the Scenes:</b>
+ * Managed by Hibernate, this entity uses a UUID strategy for decentralized ID generation.
+ * It integrates with the <b>Persistence Context</b> to provide automatic auditing via 
+ * {@link CreationTimestamp} and {@link UpdateTimestamp}. The relationship with 
+ * {@link Role} is fetched eagerly to ensure that authorities are available 
+ * immediately during the authorization filter phase.
+ * </p>
+ *
+ * <p><b>Security Integrity:</b>
+ * <ul>
+ *   <li><b>{@code @Column(updatable = false)}:</b> Applied to {@code createdAt} to preserve 
+ *       the immutable audit trail of account creation, preventing administrative or 
+ *       malicious tampering.</li>
+ *   <li><b>{@link #getAuthorities()}:</b> Flattens the many-to-many role relationship 
+ *       into {@link SimpleGrantedAuthority} objects for Spring's access decision managers.</li>
+ * </ul>
+ * </p>
+ *
+ * <p><b>Design Rationale:</b>
+ * Uses {@link FetchType#EAGER} for the {@code roles} relationship. While LAZY is generally 
+ * preferred, EAGER fetching here ensures that authorities are fully loaded and 
+ * available to the {@link org.springframework.security.access.intercept.FilterSecurityInterceptor} 
+ * without requiring a new transaction during authorization checks.
+ * </p>
  */
 @Getter
 @Setter

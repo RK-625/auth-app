@@ -18,8 +18,30 @@ import java.util.Arrays;
 import java.util.Optional;
 
 /**
- * Utility helper to standardize the generation of authentication responses
- * and extracting tokens from requests.
+ * <h1>Authentication Response Orchestrator</h1>
+ *
+ * <p>This helper component centralizes the logic for constructing standardized authentication responses
+ * and extracting security tokens from incoming requests. It acts as a bridge between the service layer
+ * and the HTTP transport layer.</p>
+ *
+ * <p><b>Implementation Workflow:</b>
+ * 1. <b>Response Assembly:</b> Combines user data, access tokens, and refresh tokens into a unified DTO.
+ * 2. <b>Security Injection:</b> Attaches sensitive tokens to secure HTTP-only cookies.
+ * 3. <b>Extraction:</b> Implements a priority-based strategy for retrieving tokens from cookies or request bodies.</p>
+ *
+ * <p><b>Behind the Scenes:</b>
+ * Coordinates with {@link CookieService} to manipulate the {@link HttpServletResponse} and uses
+ * {@link JwtService} to validate token types during extraction. It leverages {@link ModelMapper}
+ * to ensure that internal {@link User} entities are safely projected into {@link UserDto}s.</p>
+ *
+ * <p><b>Design Rationale:</b>
+ * Centralizing this logic ensures that every authentication event (login, refresh, social login)
+ * results in a consistent response structure, simplifying frontend integration and enhancing security
+ * by enforcing best practices like {@code HttpOnly} cookies across the board.</p>
+ *
+ * @author Gemini CLI
+ * @see CookieService
+ * @see JwtService
  */
 @Component
 @RequiredArgsConstructor
@@ -31,13 +53,28 @@ public class TokenHelper {
     private final MessageHelper messageHelper;
 
     /**
-     * Orchestrates the final response for a successful authentication event.
-     * 
-     * @param response      The HttpServletResponse to attach cookies/headers to.
-     * @param user          The authenticated User entity.
-     * @param accessToken   The generated JWT access token.
-     * @param refreshToken  The generated JWT refresh token.
-     * @return A standardized TokenResponse DTO for the response body.
+     * Generates a complete authentication response including body payload and security cookies.
+     *
+     * <p><b>Implementation Workflow:</b>
+     * 1. <b>Cookie Attachment:</b> Invokes {@link CookieService} to set the Refresh Token as a secure cookie.
+     * 2. <b>Header Configuration:</b> Adds 'No-Cache' headers to prevent token leakage in browser history.
+     * 3. <b>DTO Projection:</b> Maps the {@link User} entity to a {@link UserDto} to hide sensitive fields.
+     * 4. <b>Response Construction:</b> Builds the final {@link TokenResponse} with the access token and expiry details.</p>
+     *
+     * <p><b>Behind the Scenes:</b>
+     * The refresh token is set with an expiry matching its internal TTL, ensuring the cookie is cleared
+     * by the browser when the token is no longer valid. The access token is returned in the JSON body
+     * to be used in the {@code Authorization: Bearer} header by the client.</p>
+     *
+     * <p><b>Design Rationale:</b>
+     * Splitting the tokens (Refresh in Cookie, Access in Body) provides a balance between security
+     * (Refresh Token is less accessible to XSS) and usability (Access Token is easily managed by the client).</p>
+     *
+     * @param response The HttpServletResponse to modify.
+     * @param user The authenticated user.
+     * @param accessToken The signed access JWT.
+     * @param refreshToken The signed refresh JWT.
+     * @return A {@link TokenResponse} containing the access token and user metadata.
      */
     public TokenResponse generateAuthenticatedResponse(
             HttpServletResponse response,
@@ -65,7 +102,26 @@ public class TokenHelper {
     }
 
     /**
-     * Extracts and performs basic validation on the refresh token from the request.
+     * Extracts a refresh token from the request using a hierarchical strategy.
+     *
+     * <p><b>Implementation Workflow:</b>
+     * 1. <b>Cookie Search:</b> Checks for the presence of the refresh token cookie.
+     * 2. <b>Body Fallback:</b> If no cookie is found, attempts to read from the JSON request body.
+     * 3. <b>Validation:</b> Verifies the token's type using {@link JwtService}.
+     * 4. <b>Error Handling:</b> Throws a {@link BadCredentialsException} if the token is missing or invalid.</p>
+     *
+     * <p><b>Behind the Scenes:</b>
+     * The {@link JwtService#isRefreshToken(String)} call inspects the token's claims (typically a 'typ' claim)
+     * to prevent 'token type confusion' attacks where an access token is used as a refresh token.</p>
+     *
+     * <p><b>Design Rationale:</b>
+     * Prioritizing cookies ensures that web-based clients remain secure, while the body fallback
+     * provides compatibility with mobile apps and API testing tools that might not support cookies easily.</p>
+     *
+     * @param body The optional {@link RefreshTokenRequest} body.
+     * @param request The {@link HttpServletRequest} containing cookies.
+     * @return The validated refresh token string.
+     * @throws BadCredentialsException If the token is missing or is not a refresh token.
      */
     public String extractRefreshToken(RefreshTokenRequest body, HttpServletRequest request) {
         String refreshToken = readRefreshTokenRequest(body, request)
@@ -77,6 +133,9 @@ public class TokenHelper {
         return refreshToken;
     }
 
+    /**
+     * Internal extraction strategy: Checks Cookies first, then falls back to Request Body.
+     */
     private Optional<String> readRefreshTokenRequest(RefreshTokenRequest body, HttpServletRequest request) {
         if (request.getCookies() != null) {
             Optional<String> fromCookie = Arrays.stream(request.getCookies())

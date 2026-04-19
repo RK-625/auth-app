@@ -1,12 +1,14 @@
 package com.substring.authapp.services;
 
+import com.substring.authapp.dtos.SignUpObjectDto;
 import com.substring.authapp.dtos.UserDto;
 import com.substring.authapp.entities.RefreshToken;
 import com.substring.authapp.entities.User;
 
 public interface AuthService {
-    UserDto signupUser(UserDto userDto);
-    
+    void signUpRequest(SignUpObjectDto signUpObjectDto);
+    String verifySignUpOtp(String email, String otp);
+    void verifySignUpToken(String email ,String otp ,String signUpToken, String password);
     // Password reset flow
     void initiatePasswordReset(String email);
     String verifyPasswordResetOtp(String email, String otp);

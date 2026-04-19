@@ -2,9 +2,20 @@ spring:
   application:
     name: auth-app
   profiles:
-    active: dev
+    active: dev # Tells the IDE to look at application-dev.yml by default
 
+  # Adding these placeholders makes IntelliJ recognize the auto-configuration
+  mail:
+    host: ${SPRING_MAIL_HOST:smtp.gmail.com}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
 
 server:
-  port:  8082
-
+  port: 8082
