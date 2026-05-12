@@ -10,19 +10,29 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 /**
- * Service dedicated to handling outbound email communications.
+ * <h1>Outbound Communication Service</h1>
  * 
- * <p><b>Behind the Scenes:</b>
- * This service is enabled for asynchronous execution via {@link Async}. When a method is called, 
- * Spring's {@code TaskExecutor} (configured in {@code AuthAppApplication}) picks up the request 
- * and executes it in a background thread pool, preventing the main HTTP thread from blocking 
- * while waiting for SMTP server responses.
+ * <p>Dedicated to handling all outbound email communications. This service acts as the 
+ * final point of contact between the security layer and the user's inbox.</p>
+ * 
+ * <p><b>Implementation Workflow:</b>
+ * 1. <b>Assembly:</b> Constructs professional, standardized email templates for security events.
+ * 2. <b>Offloading:</b> Utilizes the {@link Async} annotation to push the high-latency SMTP 
+ *    handshake to a background thread pool.
+ * 3. <b>Dispatch:</b> Communicates with the configured SMTP server via {@link JavaMailSender}.
  * </p>
  * 
- * <p><b>Design Rationale:</b>
+ * <p><b>Behind the Scenes (Async Orchestration):</b>
+ * This service is enabled for asynchronous execution. When a method is called, 
+ * Spring's {@code TaskExecutor} (configured in {@link com.substring.authapp.AuthAppApplication}) 
+ * picks up the request and executes it in a background thread pool. This is a critical 
+ * <b>Short-Circuit</b> for the main HTTP thread, ensuring it is never blocked by external 
+ * SMTP latency.</p>
+ * 
+ * <p><b>Design Rationale (The "Why"):</b>
  * Email dispatch is a high-latency I/O operation. Offloading this to a background thread 
- * ensures a responsive user experience, as the user doesn't have to wait for the email 
- * to be sent before receiving a confirmation on their screen.
+ * ensures a responsive user experience. Additionally, catching and logging {@link MailException} 
+ * within the service prevents background failures from crashing the primary transaction thread.
  * </p>
  */
 @Service
@@ -30,10 +40,18 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class EmailService {
 
+    // ===================================================================================
+    // SECTION 1: Infrastructure & Configuration (Fields)
+    // ===================================================================================
+
     private final JavaMailSender mailSender;
 
     @Value("${spring.mail.username}")
     private String fromAddress;
+
+    // ===================================================================================
+    // SECTION 2: Security Event Dispatchers (Public)
+    // ===================================================================================
 
     /**
      * Dispatches a password reset OTP to the user's registered email address.
@@ -68,6 +86,10 @@ public class EmailService {
     public void sendSignUpOtp(String toAddress, String otp) {
         sendOtpEmail(toAddress, otp, "Signup Verification", "initiated a new account registration");
     }
+
+    // ===================================================================================
+    // SECTION 3: Communication Engine (Internal)
+    // ===================================================================================
 
     /**
      * Internal generic engine for dispatching professional OTP emails.

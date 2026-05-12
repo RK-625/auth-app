@@ -1,0 +1,38 @@
+spring:
+  sql:
+    init:
+      mode: never
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=MySQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+security:
+  jwt:
+    secret: 9a65609d57a2f5f190e3f8a04b732629b3a4a9844f6f8972827179929f270929
+    issuer: auth-app-test
+    acess-ttl-seconds: 3600
+    refresh-ttl-seconds: 86400
+    refresh-token-cookie-name: refresh_token
+    cookie-secure: false
+    cookie-http-only: true
+    cookie-same-site: Lax
+    cookie-domain: localhost
+  otp:
+    initial-ttl-seconds: 300
+    grace-period-ttl-seconds: 60
+
+app:
+  security:
+    root:
+      email: root@test.com
+      password: rootpassword

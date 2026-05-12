@@ -1,37 +1,38 @@
+# -----------------------------------------------------------------------------
+# Development Profile Configuration
+# -----------------------------------------------------------------------------
+# These settings are optimized for local development and debugging.
+# WARNING: ddl-auto: update should NEVER be used in production.
+# -----------------------------------------------------------------------------
+
 server:
   port: 8083
 
-## database configurations
 spring:
+  # --- Database Configuration ---
   datasource:
     url: jdbc:mysql://localhost:3306/auth_app_yt
     username: ${DATABASE_USERNAME}
     password: ${DATABASE_PASSWORD}
-#    hikari:
-#      pool-name: HikariCP
-#      max-lifetime: 1800000
-#      validation-timeout: 1800000
-#      idle-timeout: 600000
-#      connection-timeout: 10000
-#      maximum-pool-size: 5
-#      leak-detection-threshold: 0
-#      initialization-fail-timeout: -1
 
-  #jpa and hibernate configurations
+  # --- Persistence Context Handshake ---
   jpa:
     hibernate:
+      # Automatically syncs Java Entity changes to the SQL Schema. 
+      # Forbidden in Production (use Flyway/Liquibase instead).
       ddl-auto: update
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
-        format_sql: true
+        format_sql: true # Pretty-prints SQL in logs for easier debugging
     show-sql: true
     defer-datasource-initialization: true
+  
   sql:
     init:
-      mode: always
+      mode: never
 
-  # --- EMAIL CONFIGURATION (Gmail Example) ---
+  # --- Outbound Communication (SMTP) ---
   mail:
     host: smtp.gmail.com
     port: 587
@@ -48,7 +49,7 @@ spring:
           protocol: smtp
         debug: true
 
-### jwt settings here
+  # --- Social Identity Providers (OAuth2) ---
   security:
       oauth2:
         client:
@@ -56,29 +57,52 @@ spring:
             google:
               client-id: ${GOOGLE_CLIENT_ID}
               client-secret: ${GOOGLE_CLIENT_SECRET}
-              scope:
-                - email
-                - profile
-                - openid
+              scope: [email, profile, openid]
             github:
               client-id: ${GITHUB_CLIENT_ID}
               client-secret: ${GITHUB_CLIENT_SECRET}
-              scope:
-                - user:email
-                - read:user
+              scope: [user:email, read:user]
           provider:
             github:
+              # --- GitHub Provider Customization ---
+              # Adding 'prompt=consent' ensures that GitHub always asks the user for 
+              # permission, which is useful for testing the JIT provisioning flow 
+              # multiple times without clearing browser cookies.
               authorization-uri: https://github.com/login/oauth/authorize?prompt=consent
 
-### jwt settings here
+# -----------------------------------------------------------------------------
+# JWT & Security Session Logic
+# -----------------------------------------------------------------------------
 security:
+    otp:
+      # --- OTP Lifespan Management ---
+      # Time before the initial verification code expires.
+      initial-ttl-seconds: 300
+      # Time given to complete the final step after successful OTP verification.
+      grace-period-ttl-seconds: 60
+
     jwt:
       secret: ${JWT_SECRET}
       issuer: ${JWT_ISSUER}
       acess-ttl-seconds: ${JWT_ACCESS_TTL_SECONDS}
       refresh-ttl-seconds: ${JWT_REFRESH_TTL_SECONDS}
       refresh-token-cookie-name: ${JWT_REFRESH_COOKIE_NAME}
+      
+      # --- Security Cookies (XSS & CSRF Mitigation) ---
+      # Forces the browser to ONLY send the cookie over HTTPS.
       cookie-secure: ${JWT_COOKIE_SECURE}
+      # Prevents Javascript from reading the cookie (Stops XSS token theft).
       cookie-http-only: ${JWT_COOKIE_HTTP_ONLY}
+      # Controls cross-site cookie behavior (Stops CSRF).
       cookie-same-site: ${JWT_COOKIE_SAME_SITE}
       cookie-domain: ${JWT_COOKIE_DOMAIN}
+
+# -----------------------------------------------------------------------------
+# Custom Application Security Properties
+# -----------------------------------------------------------------------------
+app:
+  security:
+    root:
+      # Reusing the existing Mail variables for the Root User can it later for the root user's credentials
+      email: ${MAIL_USERNAME}
+      password: ${MAIL_PASSWORD}

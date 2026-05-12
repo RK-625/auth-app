@@ -1,6 +1,9 @@
 package com.substring.authapp.services.impl;
 
-import com.substring.authapp.dtos.UserDto;
+import com.substring.authapp.dtos.admin.AdminUserCreateRequest;
+import com.substring.authapp.dtos.admin.ManagementUserResponse;
+import com.substring.authapp.dtos.user.AuthUserResponse;
+import com.substring.authapp.dtos.user.UserUpdateRequest;
 import com.substring.authapp.entities.Provider;
 import com.substring.authapp.entities.Role;
 import com.substring.authapp.entities.User;
@@ -34,7 +37,7 @@ import java.util.UUID;
  * 3. <b>Security Integration:</b> Ensures that profile changes adhere to security standards (like password hashing).
  * </p>
  *
- * <p><b>Behind the Scenes:</b>
+ * <p><b>Behind the Scenes (Transactional Context):</b>
  * This service leverages several architectural patterns:
  * <ul>
  *   <li><b>Spring AOP Proxy:</b> The {@link Transactional} annotation triggers the creation 
@@ -47,7 +50,7 @@ import java.util.UUID;
  * </ul>
  * </p>
  *
- * <p><b>Design Rationale:</b>
+ * <p><b>Design Rationale (The "Why"):</b>
  * Centralizes user-specific operations to ensure consistent application of 
  * security rules (like password hashing) and business constraints (like email 
  * uniqueness). By delegating assembly to the {@link UserHelper}, the service 
@@ -63,6 +66,10 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
+    // ===================================================================================
+    // SECTION 1: Infrastructure & Dependencies (Fields)
+    // ===================================================================================
+
     private final UserRepository userRepository;
     private final ModelMapper modelMapper;
     private final PasswordEncoder passwordEncoder;
@@ -70,131 +77,108 @@ public class UserServiceImpl implements UserService {
     private final UserHelper userHelper;
     private final RoleRepository roleRepository;
 
+    // ===================================================================================
+    // SECTION 2: Administrative User Creation
+    // ===================================================================================
+
     /**
-     * Creates a new administrative user.
+     * <h1>Administrative User Provisioning</h1>
+     * 
+     * <p>Creates a new administrative user with internal organization privileges.</p>
      *
      * <p><b>Implementation Workflow:</b>
      * 1. Validates business constraints (e.g., email uniqueness) via {@link UserHelper}.
      * 2. Hashes the provided raw password using {@link PasswordEncoder}.
      * 3. Assigns the {@code ROLE_ADMIN} role and {@link Provider#ORGANIZATION} type.
-     * 4. Persists the new user entity and returns the corresponding DTO.
+     * 4. Persists the new user entity and returns the corresponding response view.
      * </p>
      *
      * <p><b>Behind the Scenes:</b>
      * This method is marked {@link Transactional}, ensuring that if the role assignment or 
-     * persistence fails, the entire user creation is rolled back. The persistence 
-     * context tracks the entity's transition from <b>Transient</b> to <b>Managed</b>.
-     * </p>
+     * persistence fails, the entire user creation is rolled back.</p>
      *
-     * <p><b>Design Rationale:</b>
-     * Using a centralized assembly bridge ({@link UserHelper}) ensures that security 
-     * defaults (like provider type and initial roles) are applied consistently 
-     * across different user creation flows (Admin vs. Public).
-     * </p>
-     *
-     * @param userDto DTO containing the details for the new administrative account.
-     * @return DTO of the newly created admin.
+     * @param request DTO containing the details for the new administrative account.
+     * @return ManagementUserResponse view of the newly created admin.
      */
     @Override
     @Transactional
-    public UserDto createUser(UserDto userDto) {
+    public ManagementUserResponse createUser(AdminUserCreateRequest request) {
         // 1. Validate business constraints (e.g., email uniqueness)
-        userHelper.validateUserForSignup(userDto.getEmail(), userDto.getPassword());
+        userHelper.validateUserForSignup(request.getEmail(), request.getPassword());
 
         // 2. Build and save the entity using the centralized organization/admin template
-        return userHelper.buildAndSaveUser(userDto, Provider.ORGANIZATION, UserRole.ROLE_ADMIN);
+        User user = User.builder()
+                .email(request.getEmail())
+                .password(passwordEncoder.encode(request.getPassword()))
+                .name(request.getName())
+                .provider(Provider.ORGANIZATION)
+                .enabled(true)
+                .build();
+
+        // Assign ROLE_ADMIN
+        Role adminRole = roleRepository.findByName(UserRole.ROLE_ADMIN)
+                .orElseThrow(() -> new ResourceNotFoundException(messageHelper.getMessage("role.not_found")));
+        user.setRoles(new HashSet<>(Set.of(adminRole)));
+
+        User savedUser = userRepository.save(user);
+        return modelMapper.map(savedUser, ManagementUserResponse.class);
     }
 
-    /**
-     * Retrieves a user profile by their email address.
-     *
-     * <p><b>Implementation Workflow:</b>
-     * 1. Searches the database for a user matching the provided email via {@link UserRepository}.
-     * 2. Throws a {@link ResourceNotFoundException} if the user is absent.
-     * 3. Maps the entity to a {@link UserDto} for the return value.
-     * </p>
-     *
-     * <p><b>Design Rationale:</b>
-     * Email lookups are the primary identification mechanism. Returning a DTO instead 
-     * of the entity ensures that internal database fields (like version or 
-     * salt) are not exposed to the calling layer.
-     * </p>
-     *
-     * @param email The email address to look up.
-     * @return UserDto representing the found user.
-     */
-    @Override
-    public UserDto getUserByEmail(String email) {
-        User user = userHelper.findUserByEmailOrThrow(
-            email, 
-            new ResourceNotFoundException(messageHelper.getMessage("user.profile.not_found"))
-        );
-        return modelMapper.map(user, UserDto.class);
-    }
+    // ===================================================================================
+    // SECTION 3: Profile & Identity Management
+    // ===================================================================================
 
     /**
-     * Updates an existing user's profile information.
+     * <h1>Profile Update Orchestrator</h1>
+     * 
+     * <p>Updates an existing user's profile information using a partial-patch strategy.</p>
      *
      * <p><b>Implementation Workflow:</b>
      * 1. Retrieves the current persistent entity from the database.
-     * 2. Conditionally updates profile fields (name, image, provider) if they are present in the DTO.
-     * 3. Saves the updated entity and returns the new DTO state.
+     * 2. Conditionally updates profile fields (name, image) if they are present in the request.
+     * 3. Saves the updated entity and returns the new response view.
      * </p>
      *
-     * <p><b>Behind the Scenes:</b>
-     * Utilizes JPA's <b>Managed State</b> mechanics. Once the entity is loaded within a 
-     * transactional method, Hibernate tracks changes to it. This "Dirty Checking" 
-     * minimizes database writes by only updating changed columns during the flush phase.
-     * </p>
+     * <p><b>Behind the Scenes (JPA Managed State):</b>
+     * Utilizes Hibernate's <b>Dirty Checking</b> mechanism. Changes made to a managed 
+     * entity within a transaction are automatically synchronized during the flush phase, 
+     * minimizing explicit UPDATE calls.</p>
      *
-     * <p><b>Design Rationale:</b>
-     * This method is restricted to non-sensitive profile updates. Fields like 
-     * {@code password} and {@code enabled} are purposefully excluded to ensure that 
-     * account status and security credentials require dedicated, high-verification 
-     * flows (e.g., password reset handshake or administrative override).
-     * </p>
-     *
-     * @param userDto DTO containing the profile fields to update.
+     * @param request DTO containing the profile fields to update.
      * @param userId  The unique ID of the user to be modified.
-     * @return DTO of the updated user profile.
+     * @return AuthUserResponse view of the updated user profile.
      */
     @Override
     @Transactional
-    public UserDto updateUser(UserDto userDto, UUID userId) {
+    public AuthUserResponse updateUser(UserUpdateRequest request, UUID userId) {
         User oldUser = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException(messageHelper.getMessage("user.profile.not_found")));
-        
+
         // Apply profile updates conditionally (Patch-like behavior)
-        java.util.Optional.ofNullable(userDto.getProvider()).ifPresent(oldUser::setProvider);
-        java.util.Optional.ofNullable(userDto.getName()).ifPresent(oldUser::setName);
-        java.util.Optional.ofNullable(userDto.getImage()).ifPresent(oldUser::setImage);
-        
+        java.util.Optional.ofNullable(request.getName()).ifPresent(oldUser::setName);
+        java.util.Optional.ofNullable(request.getImage()).ifPresent(oldUser::setImage);
+
         User updatedUser = userRepository.save(oldUser);
-        return modelMapper.map(updatedUser, UserDto.class);
+        return modelMapper.map(updatedUser, AuthUserResponse.class);
     }
 
+    // ===================================================================================
+    // SECTION 4: Account Termination & Deactivation
+    // ===================================================================================
+
     /**
-     * Deactivates a user account (Soft Delete).
+     * <h1>Soft-Delete Engine</h1>
+     * 
+     * <p>Deactivates a user account by toggling the enabled flag, preserving historical integrity.</p>
      *
      * <p><b>Implementation Workflow:</b>
      * 1. Locates the persistent user entity by its unique UUID.
      * 2. Sets the {@code enabled} flag to {@code false} to prevent future logins.
      * </p>
      *
-     * <p><b>Behind the Scenes (JPA Dirty Checking):</b>
-     * This method relies on the **Managed State** of the entity. Because the method is marked 
-     * {@link Transactional}, Hibernate tracks any changes made to the user object 
-     * after it is fetched. Upon method completion, the transaction is committed, 
-     * and Hibernate automatically synchronizes the state with the database via an 
-     * {@code UPDATE} statement. An explicit call to {@code userRepository.save()} 
-     * is therefore redundant but would achieve the same result.
-     * </p>
-     *
      * <p><b>Design Rationale:</b>
-     * A "Soft Delete" strategy is employed to maintain referential integrity across the 
-     * system. This ensures that historical data associated with the user remains 
-     * intact while effectively terminating their access to the system.
-     * </p>
+     * A "Soft Delete" strategy maintains referential integrity across related entities 
+     * while effectively terminating system access.</p>
      *
      * @param userId The unique ID of the user to deactivate.
      */
@@ -206,39 +190,55 @@ public class UserServiceImpl implements UserService {
         user.setEnabled(false);
     }
 
+    // ===================================================================================
+    // SECTION 5: Identity Lookup Utilities
+    // ===================================================================================
+
     /**
-     * Retrieves a user by their unique identifier.
+     * <h1>Identity Resolver (Email)</h1>
+     * 
+     * <p>Retrieves a sanitized management view of a user by their email.</p>
      *
-     * @param userId The unique identifier.
-     * @return UserDto mapped from the entity.
-     * @throws ResourceNotFoundException if the ID does not exist.
+     * @param email The email address to look up.
+     * @return ManagementUserResponse representing the found user.
      */
     @Override
-    public UserDto getUserById(UUID userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException(messageHelper.getMessage("user.profile.not_found")));
-        return modelMapper.map(user, UserDto.class);
+    public ManagementUserResponse getUserByEmail(String email) {
+        User user = userHelper.findUserByEmailOrThrow(
+            email, 
+            new ResourceNotFoundException(messageHelper.getMessage("user.profile.not_found"))
+        );
+        return modelMapper.map(user, ManagementUserResponse.class);
     }
 
     /**
-     * Fetches all active users in the system.
+     * <h1>Identity Resolver (UUID)</h1>
+     * 
+     * <p>Retrieves a sanitized management view of a user by their unique identifier.</p>
      *
-     * <p><b>Implementation Workflow:</b>
-     * 1. Retrieves all users from the {@link UserRepository}.
-     * 2. Filters the list to include only those where {@code enabled == true}.
-     * 3. Maps the resulting entities to DTOs.
-     * </p>
-     *
-     * @return Iterable of UserDto objects.
+     * @param userId The unique identifier.
+     * @return ManagementUserResponse view mapped from the entity.
      */
     @Override
-    public Iterable<UserDto> getAllUsers() {
+    public ManagementUserResponse getUserById(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException(messageHelper.getMessage("user.profile.not_found")));
+        return modelMapper.map(user, ManagementUserResponse.class);
+    }
+
+    /**
+     * <h1>Global Directory Provider</h1>
+     * 
+     * <p>Fetches all active (enabled) users in the system.</p>
+     *
+     * @return Iterable of ManagementUserResponse objects.
+     */
+    @Override
+    public Iterable<ManagementUserResponse> getAllUsers() {
         return userRepository.findAll()
                 .stream()
                 .filter(User::isEnabled)
-                .map(u -> modelMapper.map(u, UserDto.class))
+                .map(u -> modelMapper.map(u, ManagementUserResponse.class))
                 .toList();
     }
-
-
 }

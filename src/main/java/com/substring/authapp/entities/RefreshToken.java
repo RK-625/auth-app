@@ -3,6 +3,8 @@ package com.substring.authapp.entities;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -15,34 +17,36 @@ import java.util.UUID;
  * enabling session revocation and rotation.</p>
  *
  * <p><b>Implementation Workflow:</b>
- * 1. Generated during the authentication handshake after successful credential verification.
- * 2. Persisted in the {@code refresh_tokens} table with a unique {@code jti} (JWT ID).
- * 3. Validated during the {@code /refresh} flow to verify session legitimacy.
- * 4. Revoked or rotated to maintain a "Zero Trust" security posture.
+ * 1. <b>Generation:</b> Created during the authentication handshake after credential verification.
+ * 2. <b>Persistence:</b> Managed by the <b>Persistence Context</b> and stored in {@code refresh_tokens}.
+ * 3. <b>Validation:</b> Checked during the {@code /refresh} flow to verify session legitimacy.
+ * 4. <b>Revocation:</b> Flagged as {@code revoked} to terminate compromised sessions.
  * </p>
  *
- * <p><b>Behind the Scenes:</b>
- * Managed by the {@code PersistenceContext}, this entity uses a {@code UUID} strategy for its primary key
- * to ensure globally unique identifiers across distributed systems. It includes database-level indexes
- * on {@code jti} and {@code user_id} to optimize lookup performance during the token refresh handshake.
+ * <p><b>Behind the Scenes (Component Interaction):</b>
+ * This entity is managed within the <b>Persistence Context</b>, ensuring that token 
+ * revocation is atomic and visible across all nodes. It omits <b>Optimistic Locking</b> 
+ * as tokens are typically subject to single-write revocation, but enforces 
+ * integrity via multi-column <b>Database Constraints</b>.
  * </p>
  *
- * <p><b>Security Integrity:</b>
+ * <p><b>Database Constraints & Persistence Logic:</b>
  * <ul>
- *   <li><b>{@code @Index}:</b> The {@code refresh_token_jti_idx} ensures O(1) lookup during the critical 
- *       refresh path, while {@code unique=true} prevents JTI collision attacks.</li>
- *   <li><b>{@code @Column(updatable = false)}:</b> Applied to {@code jti}, {@code user}, and 
- *       {@code createdAt} to ensure the immutable nature of the session's origin. Once a 
- *       session is bound to a user and JTI, it cannot be re-assigned.</li>
- *   <li><b>{@code revoked}:</b> Acts as a "Kill Switch," allowing immediate termination 
- *       of compromised sessions before the TTL expires.</li>
+ *   <li><b>Unique Handle:</b> The {@code jti} (JWT ID) column carries a <b>Unique Constraint</b> 
+ *       and a dedicated <b>Database Index</b> ({@code refresh_token_jti_idx}) for 
+ *       O(1) lookup performance during the refresh handshake.</li>
+ *   <li><b>Ownership Integrity:</b> The {@code user_id} is indexed ({@code refresh_token_user_id_idx}) 
+ *       and marked as {@code updatable = false} to ensure that session ownership 
+ *       cannot be hijacked or modified within the <b>Persistence Context</b>.</li>
+ *   <li><b>TTL Enforcement:</b> The {@code expiresAt} field is marked as {@code nullable = false} 
+ *       to ensure every token has a strictly defined lifecycle.</li>
  * </ul>
  * </p>
  *
- * <p><b>Design Rationale:</b>
- * Uses {@link FetchType#LAZY} for the User relationship to prevent unnecessary joins during
- * simple token validation checks. This adheres to the principle of "Fetch Only What You Need"
- * while maintaining a strong foreign key constraint for data integrity.
+ * <p><b>Design Rationale (The "Why"):</b>
+ * By persisting refresh tokens, we bridge the gap between stateless JWTs and 
+ * stateful session management. This allows for immediate "Kill Switch" 
+ * capability without needing to wait for the short-lived Access Token to expire.
  * </p>
  */
 @Entity
@@ -56,6 +60,11 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class RefreshToken {
+
+    // ===================================================================================
+    // SECTION 1: Identity & Metadata (Fields)
+    // ===================================================================================
+
     /**
      * Unique identifier for the RefreshToken record.
      */
@@ -68,7 +77,7 @@ public class RefreshToken {
      * Used as a unique handle for token revocation and rotation tracking.
      */
     @Column(unique = true,name = "jti",nullable = false,updatable = false)
-    private String jti; // this is the refresh toke uuid
+    private String jti;
 
     /**
      * The owner of this refresh token.
@@ -76,7 +85,8 @@ public class RefreshToken {
      */
     @ManyToOne(fetch = FetchType.LAZY,optional = false)
     @JoinColumn(name = "user_id",nullable = false,updatable = false)
-    private User user; // the user id the refresh token belongs to
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    private User user;
 
     /**
      * The point in time when this token was issued.
@@ -100,6 +110,10 @@ public class RefreshToken {
      * If this token was rotated, this field points to the JTI of the successor token.
      */
     private String replacedByToken;
+
+    // ===================================================================================
+    // SECTION 2: Domain Logic (Factory Methods)
+    // ===================================================================================
 
     /**
      * Factory method to initialize a new RefreshToken instance.

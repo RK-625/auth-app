@@ -25,27 +25,29 @@ import java.util.stream.Collectors;
  * security-sensitive logic related to identity token processing.</p>
  *
  * <p><b>Implementation Workflow:</b>
- * 1. <b>Cryptographic Provisioning:</b> Initializes signing keys from secure configurations.
- * 2. <b>Token Issuance:</b> Generates signed Access and Refresh tokens with specific claims.
+ * 1. <b>Cryptographic Provisioning:</b> Initializes signing keys from secure configurations using {@code HS512}.
+ * 2. <b>Token Issuance:</b> Generates signed Access and Refresh tokens with differentiated payloads.
  * 3. <b>Integrity Verification:</b> Parses and validates tokens against tampering and expiration.
  * </p>
  *
- * <p><b>Behind the Scenes:</b>
- * This service utilizes the <b>jjwt</b> library to implement the <b>HMAC SHA-512</b> 
- * algorithm for signing tokens. It integrates with Spring's {@code @Value} to 
- * load security configurations and provides the cryptographic foundation for 
- * the {@link JwtAuthenticationFilter}.</p>
+ * <p><b>Behind the Scenes (Cryptographic Strength):</b>
+ * This service utilizes the <b>jjwt</b> library to implement the <b>HMAC SHA-512 (HS512)</b> 
+ * algorithm. HS512 was chosen for its high collision resistance and performance on 
+ * 64-bit architectures. It requires a minimum key length of 512 bits (64 bytes), 
+ * providing a significantly higher security margin than HS256 against brute-force 
+ * and dictionary attacks.</p>
  *
- * <p><b>Design Rationale:</b>
- * Employs a <b>Dual-Token Architecture</b>:
+ * <p><b>Design Rationale (The "Why"):</b>
+ * Employs a <b>Dual-Token Architecture</b> with distinct security profiles:
  * <ul>
- *   <li><b>Access Tokens:</b> Short-lived and stateless, minimizing the impact of 
- *       token theft.</li>
- *   <li><b>Refresh Tokens:</b> Long-lived and stateful (linked to database), enabling 
- *       precise revocation control and token rotation.</li>
+ *   <li><b>Access Tokens (Heavy Payload):</b> Short-lived (e.g., 15 min) and stateless. 
+ *       Contains full identity claims (email, roles) to enable "Zero-Database" authorization 
+ *       checks in the {@link JwtAuthenticationFilter}.</li>
+ *   <li><b>Refresh Tokens (Light Payload):</b> Long-lived (e.g., 7 days) and stateful. 
+ *       Contains only the {@code jti} (JWT ID) and {@code sub} (Subject). This minimalism 
+ *       ensures that if intercepted, the token reveals no sensitive user data while 
+ *       still allowing the server to perform a "Kill-Switch" lookup against the database.</li>
  * </ul>
- * This balance ensures high performance through statelessness while maintaining 
- * the ability to terminate compromised sessions.
  * </p>
  *
  * @author Gemini CLI
@@ -55,18 +57,26 @@ import java.util.stream.Collectors;
 @Getter
 public class JwtService {
 
+    // ===================================================================================
+    // SECTION 1: Infrastructure & Configuration (Fields)
+    // ===================================================================================
+
     private final SecretKey key;
     private final long accessTtlSeconds;
     private final long refreshTtlSeconds;
     private final String issuer;
+
+    // ===================================================================================
+    // SECTION 2: Constructor (Cryptographic Setup)
+    // ===================================================================================
 
     /**
      * Initializes the service with cryptographic parameters.
      *
      * <p><b>Behind the Scenes:</b>
      * The {@link SecretKey} is derived from the configured secret string using 
-     * {@code Keys.hmacShaKeyFor()}. This key is then used for all subsequent 
-     * signing and verification operations, ensuring consistency across the application.</p>
+     * {@code Keys.hmacShaKeyFor()}. This ensures the key meets the entropy 
+     * requirements for the <b>HS512</b> algorithm.</p>
      *
      * @param secretKey The raw HMAC secret (must be at least 64 bytes for HS512).
      * @param accessTtlSeconds Expiration time for access tokens.
@@ -85,20 +95,25 @@ public class JwtService {
         this.issuer = issuer;
     }
 
+    // ===================================================================================
+    // SECTION 3: Token Generation Logic (Public)
+    // ===================================================================================
+
     /**
      * Creates a signed Access Token for user authorization.
      *
+     * <p><b>Payload Composition:</b>
+     * This token is <b>claim-heavy</b>. It includes the user's email and full role list. 
+     * This design allows downstream services and filters to make authorization 
+     * decisions without querying the database, fulfilling the "Stateless" 
+     * promise of JWTs.</p>
+     *
      * <p><b>Implementation Workflow:</b>
      * 1. Collects user metadata (UUID, email, roles).
-     * 2. Sets standard claims: {@code sub} (Subject), {@code iss} (Issuer), {@code iat} (Issued At), and {@code exp} (Expiration).
+     * 2. Sets standard claims: {@code sub}, {@code iss}, {@code iat}, and {@code exp}.
      * 3. Adds custom claims: {@code email}, {@code roles}, and {@code typ} (set to 'access').
-     * 4. Signs the payload using the HS512 algorithm and the private secret key.
+     * 4. Signs the payload using the <b>HS512</b> algorithm.
      * </p>
-     *
-     * <p><b>Behind the Scenes:</b>
-     * The inclusion of roles in the Access Token allows the {@link JwtAuthenticationFilter} 
-     * to populate authorities without an additional database query for every request, 
-     * significantly improving API throughput.</p>
      *
      * @param user The user for whom the token is generated.
      * @return A compact, signed JWT string.
@@ -126,15 +141,17 @@ public class JwtService {
     /**
      * Creates a signed Refresh Token for session extension.
      *
+     * <p><b>Payload Composition:</b>
+     * This token is <b>claim-light</b>. It intentionally excludes sensitive 
+     * metadata like roles or email. Its primary purpose is to act as a 
+     * secure handle to the {@link com.substring.authapp.entities.RefreshToken} 
+     * entity in the database via the {@code jti} claim.</p>
+     *
      * <p><b>Implementation Workflow:</b>
      * 1. Uses the provided JTI (JWT ID) which corresponds to a database record.
-     * 2. Sets the {@code typ} claim to 'refresh' to prevent misuse as an access token.
-     * 3. Signs the token with a longer expiration period.
+     * 2. Sets the {@code typ} claim to 'refresh' to prevent misuse.
+     * 3. Signs the token with <b>HS512</b> and a longer expiration period.
      * </p>
-     *
-     * <p><b>Design Rationale:</b>
-     * Refresh tokens contain minimal information. This reduces the risk of sensitive 
-     * data exposure if a refresh token (which has a longer life) is intercepted.</p>
      *
      * @param user The user.
      * @param jti The unique identifier linked to the persistent token record.
@@ -152,6 +169,10 @@ public class JwtService {
                 .signWith(key, SignatureAlgorithm.HS512)
                 .compact();
     }
+
+    // ===================================================================================
+    // SECTION 4: Token Parsing & Validation (Public)
+    // ===================================================================================
 
     /**
      * Parses and cryptographically validates a JWT string.
@@ -189,6 +210,10 @@ public class JwtService {
     public boolean isRefreshToken(String token) {
         return "refresh".equals(parse(token).getPayload().get("typ"));
     }
+
+    // ===================================================================================
+    // SECTION 5: Claims Extraction (Public)
+    // ===================================================================================
 
     /**
      * Extracts the User ID from the token's subject claim.

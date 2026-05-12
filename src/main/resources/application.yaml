@@ -1,10 +1,23 @@
+# -----------------------------------------------------------------------------
+# Authentication Microservice - Primary Configuration
+# -----------------------------------------------------------------------------
+# This is the base configuration file. In a professional production environment,
+# most values here are placeholders that are injected via environment variables
+# (e.g., from AWS Secrets Manager or Kubernetes ConfigMaps).
+# -----------------------------------------------------------------------------
+
 spring:
   application:
     name: auth-app
   profiles:
-    active: dev # Tells the IDE to look at application-dev.yml by default
+    # --- Profile Activation ---
+    # In production, this should be set to 'prod' via -Dspring.profiles.active=prod.
+    # Currently defaults to 'dev' to load local developer settings from application-dev.yml.
+    active: dev
 
-  # Adding these placeholders makes IntelliJ recognize the auto-configuration
+  # --- Mail Auto-Configuration ---
+  # Adding these keys ensures that the 'JavaMailSender' bean is properly initialized
+  # by Spring Boot's auto-configuration engine.
   mail:
     host: ${SPRING_MAIL_HOST:smtp.gmail.com}
     port: ${SPRING_MAIL_PORT:587}

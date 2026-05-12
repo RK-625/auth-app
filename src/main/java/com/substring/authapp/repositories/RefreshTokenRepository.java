@@ -7,23 +7,40 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Data Access Object (DAO) for managing {@link RefreshToken} persistence.
+ * <h1>Session Persistence Data Access Provider</h1>
  *
- * <p><b>Behind the Scenes:</b>
- * At runtime, Spring Data JPA generates a proxy implementation of this interface using the 
- * {@code JpaRepositoryFactory}. This implementation encapsulates the {@code EntityManager} 
- * and handles transaction boundaries, boilerplate SQL generation, and result set mapping.
+ * <p>Data Access Object (DAO) for managing {@link RefreshToken} persistence. This 
+ * repository provides the bridge between the stateless JWT layer and the 
+ * stateful session tracking store.</p>
+ *
+ * <p><b>Implementation Workflow:</b>
+ * 1. <b>Discovery:</b> Locates tokens by their unique JTI handle.
+ * 2. <b>Rotation:</b> Manages the transition of tokens during the refresh flow.
+ * 3. <b>Revocation:</b> Facilitates immediate session termination by flagging records.
+ * 4. <b>Proxying:</b> Handled by Spring Data's {@code JpaRepositoryFactory} at startup.
  * </p>
  *
- * <p><b>Query Generation Logic:</b>
- * Utilizes <b>Method Name Derivation</b>. The method {@code findByJti} is parsed by the 
- * {@code PartTree} logic to generate a {@code SELECT} query with a {@code WHERE jti = ?} 
- * clause, ensuring efficient indexed lookups.
+ * <p><b>Behind the Scenes (Component Interaction):</b>
+ * This repository is powered by <b>Spring Data JPA Proxy Generation</b>. At runtime, 
+ * calls to {@code findByJti} are intercepted by a proxy that translates the 
+ * method name into a specific indexed query. The <b>@Index optimizations</b> on 
+ * the {@code jti} and {@code user_id} columns (defined in {@link RefreshToken}) 
+ * are critical for O(1) performance during the high-load token refresh path.</p>
+ *
+ * <p><b>Design Rationale (The "Why"):</b>
+ * By using indexed JTI lookups, we ensure that session validation does not become 
+ * a bottleneck as the {@code refresh_tokens} table grows. The <b>Spring Data Proxy</b> 
+ * ensures that all operations are transactional, maintaining atomicity during 
+ * sensitive token rotation operations.
  * </p>
  * 
  * @see RefreshToken For the entity structure and security purpose of JTI.
  */
 public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID> {
+
+    // ===================================================================================
+    // SECTION 1: Token Discovery & Validation
+    // ===================================================================================
 
     /**
      * Retrieves a refresh token using its unique JWT ID handle.

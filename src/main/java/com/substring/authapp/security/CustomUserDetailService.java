@@ -37,7 +37,7 @@ import org.springframework.stereotype.Service;
  * error message differences.
  * </p>
  *
- * <p><b>Design Rationale:</b>
+ * <p><b>Design Rationale (The "Why"):</b>
  * By adapting our JPA entity to the {@code UserDetails} interface, we allow 
  * Spring Security to handle the complex logic of password verification and 
  * account status checks (enabled/locked) while maintaining control over 
@@ -52,8 +52,17 @@ import org.springframework.stereotype.Service;
 @AllArgsConstructor
 public class CustomUserDetailService implements UserDetailsService {
 
+    // ===================================================================================
+    // SECTION 1: Infrastructure (Fields)
+    // ===================================================================================
+
     private final UserRepository userRepository;
     private final MessageHelper messageHelper;
+
+    // ===================================================================================
+    // SECTION 2: UserDetails Implementation (Public)
+    // ===================================================================================
+
     /**
      * Retrieves a user entity from the database using their email address.
      *
@@ -63,7 +72,7 @@ public class CustomUserDetailService implements UserDetailsService {
      * 3. Returns the {@link UserDetails} object or throws a security-aware exception.
      * </p>
      *
-     * <p><b>Behind the Scenes:</b>
+     * <p><b>Behind the Scenes (Handshake Resolution):</b>
      * If the user is not found, we throw a {@link BadCredentialsException} rather 
      * than the standard {@link UsernameNotFoundException}. This is a security 
      * best practice to prevent "User Enumeration" attacks, where an attacker 

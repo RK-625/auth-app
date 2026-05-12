@@ -36,13 +36,25 @@ import java.util.Optional;
 @Service
 public class GithubService {
 
+    // ===================================================================================
+    // SECTION 1: Infrastructure (Fields)
+    // ===================================================================================
+
     private final RestClient restClient;
     private final MessageHelper messageHelper;
+
+    // ===================================================================================
+    // SECTION 2: Constructor (Dependency Injection)
+    // ===================================================================================
 
     public GithubService(RestClient restClient, MessageHelper messageHelper) {
         this.restClient = restClient;
         this.messageHelper = messageHelper;
     }
+
+    // ===================================================================================
+    // SECTION 3: External API Integration (Public)
+    // ===================================================================================
 
     /**
      * Fetches the primary email address from GitHub for the authenticated user.
@@ -53,7 +65,7 @@ public class GithubService {
      * 3. Filters the response list to find the email object marked as {@code primary}.
      * </p>
      *
-     * <p><b>Behind the Scenes:</b>
+     * <p><b>Behind the Scenes (Metadata Handshake):</b>
      * If the API call fails or no primary email is found, this method throws a {@link BadCredentialsException} 
      * or {@link ResourceNotFoundException}. These exceptions halt the OAuth2 flow and are caught by the 
      * global exception handler, preventing the creation of an orphaned user account without an email.
@@ -81,6 +93,4 @@ public class GithubService {
                 .findAny()
                 .orElseThrow(() -> new BadCredentialsException(messageHelper.getMessage("external.github.error", "No primary email found")));
     }
-
-
 }

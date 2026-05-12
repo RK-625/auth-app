@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.*;
 import lombok.Builder.Default;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -20,35 +22,36 @@ import java.util.*;
  * mandatory {@link UserDetails} contract for Spring Security.</p>
  *
  * <p><b>Implementation Workflow:</b>
- * 1. Initialized during registration or social login (JIT Provisioning).
- * 2. Persisted in the {@code users} table with a cryptographically hashed password.
- * 3. Loaded by the {@code UserDetailsService} during the authentication handshake.
- * 4. Referenced by {@link RefreshToken} and {@link Role} entities to build the security context.
+ * 1. <b>Initialization:</b> Created during registration or social login (JIT Provisioning).
+ * 2. <b>Persistence:</b> Managed by the <b>Persistence Context</b> and stored in the {@code users} table.
+ * 3. <b>Handshake:</b> Loaded by the {@code UserDetailsService} during the authentication process.
+ * 4. <b>Authorization:</b> Authorities are derived from the {@link Role} collection.
  * </p>
  *
- * <p><b>Behind the Scenes:</b>
- * Managed by Hibernate, this entity uses a UUID strategy for decentralized ID generation.
- * It integrates with the <b>Persistence Context</b> to provide automatic auditing via 
- * {@link CreationTimestamp} and {@link UpdateTimestamp}. The relationship with 
- * {@link Role} is fetched eagerly to ensure that authorities are available 
- * immediately during the authorization filter phase.
+ * <p><b>Behind the Scenes (Component Interaction):</b>
+ * This entity is a central component within the <b>Persistence Context</b>. Hibernate manages its 
+ * state transitions (Transient -> Persistent -> Detached) ensuring data consistency. 
+ * It relies on the {@link com.substring.authapp.repositories.UserRepository} for transactional 
+ * integrity. While it omits <b>Optimistic Locking</b> ({@code @Version}) to minimize overhead 
+ * on high-frequency login timestamp updates, it enforces structural integrity through 
+ * strict <b>Database Constraints</b>.
  * </p>
  *
- * <p><b>Security Integrity:</b>
+ * <p><b>Database Constraints & Persistence Logic:</b>
  * <ul>
- *   <li><b>{@code @Column(updatable = false)}:</b> Applied to {@code createdAt} to preserve 
- *       the immutable audit trail of account creation, preventing administrative or 
- *       malicious tampering.</li>
- *   <li><b>{@link #getAuthorities()}:</b> Flattens the many-to-many role relationship 
- *       into {@link SimpleGrantedAuthority} objects for Spring's access decision managers.</li>
+ *   <li><b>Unique Identity:</b> The {@code user_email} column carries a <b>Unique Constraint</b>, 
+ *       preventing duplicate registrations and serving as the primary lookup handle.</li>
+ *   <li><b>Immutable Metadata:</b> The {@code createdAt} field is marked as {@code updatable = false} 
+ *       to preserve audit integrity within the <b>Persistence Context</b>.</li>
+ *   <li><b>Length Constraints:</b> The {@code user_name} field is capped at 500 characters to 
+ *       prevent buffer-related issues or storage abuse.</li>
  * </ul>
  * </p>
  *
- * <p><b>Design Rationale:</b>
- * Uses {@link FetchType#EAGER} for the {@code roles} relationship. While LAZY is generally 
- * preferred, EAGER fetching here ensures that authorities are fully loaded and 
- * available to the {@link org.springframework.security.access.intercept.FilterSecurityInterceptor} 
- * without requiring a new transaction during authorization checks.
+ * <p><b>Design Rationale (The "Why"):</b>
+ * Uses {@link FetchType#EAGER} for roles to ensure that the <b>SecurityContextHolder</b> 
+ * is populated with a fully-hydrated principal, preventing {@code LazyInitializationException} 
+ * during the authorization filter phase where the JPA session might already be closed.
  * </p>
  */
 @Getter
@@ -59,6 +62,11 @@ import java.util.*;
 @Entity
 @Table(name = "users")
 public class User implements UserDetails {
+
+    // ===================================================================================
+    // SECTION 1: Identity & Profile (Fields)
+    // ===================================================================================
+
     /**
      * Unique identifier for the user.
      */
@@ -95,7 +103,47 @@ public class User implements UserDetails {
      */
     @Builder.Default
     private boolean enabled = true;
-    
+
+    // ===================================================================================
+    // SECTION 2: Security & Relationships (Fields)
+    // ===================================================================================
+
+    /**
+     * The authentication provider used for this user account (e.g., LOCAL, GOOGLE, GITHUB).
+     */
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private Provider provider = Provider.LOCAL;
+
+    /**
+     * Roles associated with this user, used for role-based access control (RBAC).
+     * Fetched eagerly to ensure roles are available during authentication checks.
+     */
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(name = "user_roles", 
+        joinColumns = @JoinColumn(name = "user_id"), 
+        inverseJoinColumns = @JoinColumn(name = "role_id"))
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    @Builder.Default
+    private Set<Role> roles = new HashSet<>();
+
+    /**
+     * Active sessions for the user.
+     */
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<RefreshToken> refreshTokens = new ArrayList<>();
+
+    /**
+     * Pending password reset requests.
+     */
+    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    private ResetPasswordObject resetPasswordObject;
+
+    // ===================================================================================
+    // SECTION 3: Audit Metadata (Fields)
+    // ===================================================================================
+
     /**
      * Timestamp indicating when the user account was created.
      */
@@ -110,27 +158,18 @@ public class User implements UserDetails {
     @UpdateTimestamp
     @Builder.Default
     private Instant updatedAt = Instant.now();
-    
-    /**
-     * The authentication provider used for this user account (e.g., LOCAL, GOOGLE, GITHUB).
-     */
-    @Enumerated(EnumType.STRING)
-    @Builder.Default
-    private Provider provider = Provider.LOCAL;
 
-    /**
-     * Roles associated with this user, used for role-based access control (RBAC).
-     * Fetched eagerly to ensure roles are available during authentication checks.
-     */
-    @ManyToMany(fetch = FetchType.EAGER)
-    @JoinTable(name = "user->roles", 
-        joinColumns = @JoinColumn(name = "user_id"), 
-        inverseJoinColumns = @JoinColumn(name = "role_id"))
-    @Builder.Default
-    private Set<Role> roles = new HashSet<>();
+    // ===================================================================================
+    // SECTION 4: UserDetails Contract Implementation
+    // ===================================================================================
 
     /**
      * Maps user roles to Spring Security {@link GrantedAuthority}.
+     * 
+     * <p><b>Behind the Scenes:</b>
+     * During the <b>Authentication Handshake</b>, Spring Security's {@code AuthenticationProvider} 
+     * calls this method to populate the {@code Authentication} object with the user's roles, 
+     * prefixed with {@code ROLE_} if necessary (handled by {@link Role} entity).</p>
      * 
      * @return a collection of authorities based on the user's roles.
      */
@@ -154,9 +193,7 @@ public class User implements UserDetails {
 
     /**
      * Indicates whether the user's account has expired. 
-     * An expired account cannot be authenticated.
-     * 
-     * @return true if the account is non-expired, false otherwise.
+     * @return true if the account is non-expired.
      */
     @Override
     public boolean isAccountNonExpired() {
@@ -165,9 +202,7 @@ public class User implements UserDetails {
 
     /**
      * Indicates whether the user is locked or unlocked. 
-     * A locked user cannot be authenticated.
-     * 
-     * @return true if the user is not locked, false otherwise.
+     * @return true if the user is not locked.
      */
     @Override
     public boolean isAccountNonLocked() {
@@ -176,9 +211,7 @@ public class User implements UserDetails {
 
     /**
      * Indicates whether the user's credentials (password) have expired. 
-     * Expired credentials prevent authentication.
-     * 
-     * @return true if the credentials are non-expired, false otherwise.
+     * @return true if the credentials are non-expired.
      */
     @Override
     public boolean isCredentialsNonExpired() {

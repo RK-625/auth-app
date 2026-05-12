@@ -1,6 +1,6 @@
 package com.substring.authapp.security;
 
-import com.substring.authapp.helpers.UserHelper;
+import com.substring.authapp.entities.User;
 import com.substring.authapp.repositories.UserRepository;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
@@ -34,138 +34,149 @@ import java.util.stream.Collectors;
  * <p><b>Implementation Workflow:</b>
  * 1. <b>Extraction:</b> Isolates the JWT from the {@code Authorization} bearer header.
  * 2. <b>Validation:</b> Verifies the cryptographic signature and ensures the token is of type {@code ACCESS}.
- * 3. <b>Identification:</b> Extracts the user identity (UUID) and synchronizes with the {@link UserRepository}.
- * 4. <b>Authorization:</b> Maps entity-level roles to {@link GrantedAuthority} objects.
- * 5. <b>Contextualization:</b> Populates the {@link SecurityContextHolder} to authenticate the request thread.
+ * 3. <b>Identification:</b> Extracts the user identity (UUID) and synchronizes with the {@link com.substring.authapp.repositories.UserRepository}.
+ * 4. <b>Authorization:</b> Maps entity-level roles to {@link org.springframework.security.core.GrantedAuthority} objects.
+ * 5. <b>Contextualization:</b> Populates the {@link org.springframework.security.core.context.SecurityContextHolder} to authenticate the request thread.
  * </p>
  *
- * <p><b>Behind the Scenes (Filter Chain Position):</b>
+ * <p><b>Behind the Scenes (Filter Chain Interaction):</b>
  * This component is injected <b>before</b> the standard {@code UsernamePasswordAuthenticationFilter} in the 
- * {@link org.springframework.security.web.SecurityFilterChain}. It acts as a manual "short-circuit" 
- * for stateless requests. If a valid token is present, the {@link SecurityContextHolder} is populated 
- * with a {@link UsernamePasswordAuthenticationToken}, effectively bypassing the need for subsequent 
- * credential-based authentication steps for that specific request.</p>
+ * {@link org.springframework.security.web.SecurityFilterChain}. It acts as a manual <b>Short-Circuit</b> 
+ * for stateless requests. If a valid token is present, the {@link org.springframework.security.core.context.SecurityContextHolder} 
+ * is populated, effectively bypassing the need for subsequent credential-based authentication steps for that specific request.</p>
  *
- * <p><b>Design Rationale (Stateless Security):</b>
- * By extending {@link OncePerRequestFilter}, the application ensures that expensive cryptographic 
- * validation and database lookups happen exactly once per request. This architecture supports 
- * high-concurrency environments by eliminating the need for server-side HTTP sessions (JSESSIONID).
+ * <p><b>Design Rationale (The "Why"):</b>
+ * By extending {@link org.springframework.web.filter.OncePerRequestFilter}, the application ensures 
+ * that expensive cryptographic validation and database lookups happen exactly once per request. 
+ * The <b>Short-Circuit</b> mechanism allows the security context to be established 
+ * instantly for authenticated requests, reducing latency and avoiding redundant 
+ * authentication logic in downstream filters. This ensures that valid token-holders 
+ * are "fast-tracked" through the security pipeline.
  * </p>
+ * 
+ * @author Gemini CLI
+ * @see JwtService
+ * @see com.substring.authapp.repositories.UserRepository
  */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    // ===================================================================================
+    // SECTION 1: Infrastructure (Fields)
+    // ===================================================================================
+
     private final JwtService jwtService;
     private final UserRepository userRepository;
     private final Logger logger = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
+
+    // ===================================================================================
+    // SECTION 2: Constructor (Dependency Injection)
+    // ===================================================================================
 
     public JwtAuthenticationFilter(JwtService jwtService, UserRepository userRepository) {
         this.jwtService = jwtService;
         this.userRepository = userRepository;
     }
 
+    // ===================================================================================
+    // SECTION 3: Filter Implementation (Core Logic)
+    // ===================================================================================
+
     /**
      * Executes the core JWT validation and authentication logic.
      *
      * <p><b>Implementation Workflow:</b>
-     * 1. Extracts the {@code Authorization} header and verifies the {@code Bearer } prefix.
-     * 2. Isolates the raw token and confirms it is an 'access' type token via {@link JwtService}.
-     * 3. Parses the token to extract the subject (User UUID) while verifying the cryptographic signature.
-     * 4. Retrieves the {@link User} entity from the database to verify existence and activity.
-     * 5. Maps the user's roles to {@link GrantedAuthority} objects.
-     * 6. Populates the {@link SecurityContextHolder} with a new {@link UsernamePasswordAuthenticationToken}.
+     * 1. <b>Extraction:</b> Extracts the {@code Authorization} header and verifies the {@code Bearer } prefix.
+     * 2. <b>Type Validation:</b> Isolates the raw token and confirms it is an 'access' type token via {@link JwtService}.
+     * 3. <b>Signature Verification:</b> Parses the token to extract the subject (User UUID) while verifying the signature.
+     * 4. <b>Context Population:</b> Retrieves the {@link com.substring.authapp.entities.User} entity and populates the {@link SecurityContextHolder}.
      * </p>
      *
-     * <p><b>Behind the Scenes:</b>
-     * The {@link SecurityContextHolder} uses a {@code ThreadLocal} strategy by default. 
-     * This means the authentication state is isolated to the current request thread 
-     * and is automatically cleared when the request completes, enforcing statelessness.
-     * </p>
+     * <p><b>Behind the Scenes (Short-Circuit Logic):</b>
+     * The method performs an <b>Early Exit</b> if no Bearer token is found or if the token is 
+     * not of type 'ACCESS'. If a valid token is processed, the {@link SecurityContextHolder} 
+     * is populated with a {@link UsernamePasswordAuthenticationToken}. This population 
+     * acts as the <b>Short-Circuit</b>, as subsequent filters (like {@code FilterSecurityInterceptor}) 
+     * will see an already authenticated principal and permit access without further challenges.</p>
      *
      * @param request The incoming HTTP request.
      * @param response The outgoing HTTP response.
      * @param filterChain The chain of subsequent filters to execute.
-     * @throws ServletException If a servlet-level error occurs.
-     * @throws IOException If an I/O error occurs during filter execution.
      */
     @Override
     protected void doFilterInternal(HttpServletRequest request, 
                                     HttpServletResponse response, 
                                     FilterChain filterChain) throws ServletException, IOException {
 
-        // 1. Extract the Authorization header from the request
+        // PHASE 1: Header Extraction
         String header = request.getHeader("Authorization");
 
-        // 2. Validate the header structure (must start with 'Bearer ')
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
 
             try {
-                // 3. Ensure the token is a designated 'access' token, not a refresh token
+                // PHASE 2: Token Type & Signature Validation (Short-Circuit)
                 if (!jwtService.isAccessToken(token)) {
                     filterChain.doFilter(request, response);
                     return;
                 }
 
-                // 4. Parse and cryptographically verify the token's signature
                 Jws<Claims> claims = jwtService.parse(token);
                 Claims payload = claims.getPayload();
                 String userId = payload.getSubject();
                 UUID userUUID = UUID.fromString(userId);
 
-                // 5. Look up the user in the database to ensure the account still exists and is active
+                // PHASE 3: Identity Resolution & Security Context Population
                 userRepository.findById(userUUID).ifPresent(user -> {
                     if (user.isEnabled()) {
-                        // 6. Map user roles to Spring Security GrantedAuthority objects
                         List<GrantedAuthority> authorities = user.getRoles() == null ? List.of() : 
                             user.getRoles().stream()
                                 .map(role -> new SimpleGrantedAuthority(role.getName().toString()))
                                 .collect(Collectors.toList());
 
-                        // 7. Construct the Authentication object for the security context
+                        // CRITICAL FIX: Store the full 'user' object as the principal instead of just user.getEmail()
+                        // This allows @AuthenticationPrincipal User currentUser to work in controllers.
                         UsernamePasswordAuthenticationToken authentication = 
-                            new UsernamePasswordAuthenticationToken(user.getEmail(), null, authorities);
+                            new UsernamePasswordAuthenticationToken(user, null, authorities);
 
-                        // 8. Attach request-specific details (IP, Session ID) to the authentication
                         authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
-                        // 9. Finalize the authentication by setting it in the thread-local SecurityContext
                         if (SecurityContextHolder.getContext().getAuthentication() == null) {
                             SecurityContextHolder.getContext().setAuthentication(authentication);
                         }
                     }
                 });
             } catch (ExpiredJwtException e) {
-                // Specific handling for expired tokens to provide clearer error feedback
                 request.setAttribute("error", "Token has expired");
                 logger.warn("JWT Token expired: {}", e.getMessage());
             } catch (Exception e) {
-                // Generic handling for any other validation failures (malformed token, wrong signature)
                 request.setAttribute("error", "Token is not valid");
                 logger.error("JWT validation error: {}", e.getMessage());
             }
         }
 
-        // 10. Continue the filter chain regardless of whether a token was found/validated
+        // PHASE 4: Chain Continuation
         filterChain.doFilter(request, response);
     }
 
+    // ===================================================================================
+    // SECTION 4: Filter Routing (Overrides)
+    // ===================================================================================
+
     /**
-     * Determines whether the current request should bypass this filter.
+     * <h1>Bypass Strategy</h1>
+     * 
+     * <p>Determines whether the current request should bypass this filter.</p>
      *
      * <p><b>Design Rationale:</b>
      * Public endpoints (e.g., login, signup, forget-password) are excluded from JWT 
-     * validation to allow unauthenticated users to initiate identity-related actions. 
-     * This reduces overhead for endpoints that are explicitly marked as {@code permitAll()} 
-     * in the {@code SecurityConfig}.
-     * </p>
+     * validation to allow unauthenticated users to initiate identity-related actions.</p>
      *
      * @param request The current HTTP request.
      * @return {@code true} if the request targets an authentication endpoint.
      */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        // Skip authentication filter for auth endpoints as they are permitAll
         return request.getRequestURI().startsWith("/api/v1/auth");
     }
 }

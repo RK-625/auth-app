@@ -1,12 +1,15 @@
 package com.substring.authapp.exceptions;
 
-import com.substring.authapp.dtos.ApiError;
+import com.substring.authapp.dtos.common.ApiError;
+import com.substring.authapp.helpers.MessageHelper;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -31,13 +34,13 @@ import java.util.stream.Collectors;
  * 4. <b>Transformation:</b> Wraps the error metadata into an {@link ApiError} DTO for client consumption.
  * </p>
  *
- * <p><b>Behind the Scenes:</b>
+ * <p><b>Behind the Scenes (Exception Resolution Handshake):</b>
  * Spring's {@code ExceptionHandlerExceptionResolver} scans this class for {@link ExceptionHandler} annotations 
  * during application startup. When an exception is thrown during a request, the resolver performs a 
  * <b>Type Match</b> against the annotated methods to delegate the error handling logic.
  * </p>
  *
- * <p><b>Design Rationale:</b>
+ * <p><b>Design Rationale (The "Why"):</b>
  * Centralized error handling promotes "fail-fast" behavior while maintaining a clean API contract.
  * It prevents <b>Information Leakage</b> by ensuring that internal implementation details (like 
  * SQL syntax errors or class names) are never exposed to external consumers.
@@ -47,9 +50,43 @@ import java.util.stream.Collectors;
  * @see ApiError
  */
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
 
+    // ===================================================================================
+    // SECTION 1: Infrastructure (Fields)
+    // ===================================================================================
+
     private final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private final MessageHelper messageHelper;
+
+    // ===================================================================================
+    // SECTION 2: Security Exceptions (Auth & Authz)
+    // ===================================================================================
+
+    /**
+     * Authorization and Access Control Failures.
+     * 
+     * <p><b>Triggering Conditions:</b>
+     * Occurs when an authenticated user attempts to access a resource for which they do 
+     * not possess the required authorities (e.g., a USER attempting to access ROOT endpoints).</p>
+     * 
+     * <p><b>Design Rationale:</b>
+     * Explicitly catching {@link AccessDeniedException} ensures that the client receives 
+     * a semantic 403 Forbidden status instead of a generic 500 error, facilitating 
+     * accurate frontend permission handling.</p>
+     * 
+     * @param e The access denied exception.
+     * @param request The current web request.
+     * @return A standardized 403 error response.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiError> handleAccessDeniedException(AccessDeniedException e, HttpServletRequest request) {
+        logger.warn("Authorization failure: Access Denied for URI {}", request.getRequestURI());
+        String message = messageHelper.getMessage("auth.user.access_denied");
+        ApiError apiError = ApiError.of(HttpStatus.FORBIDDEN.value(), "Forbidden", message, request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(apiError);
+    }
 
     /**
      * Identity and Access Management Failures.
@@ -84,6 +121,10 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(apiError);
     }
 
+    // ===================================================================================
+    // SECTION 3: Data & Validation Exceptions
+    // ===================================================================================
+
     /**
      * Database Integrity and Constraint Violations.
      *
@@ -91,7 +132,7 @@ public class GlobalExceptionHandler {
      * Most commonly triggered by a {@code Unique Constraint} violation, such as attempting
      * to register an email address that already exists in the {@code users} table.</p>
      *
-     * <p><b>Behind the Scenes:</b>
+     * <p><b>Behind the Scenes (Security Suppression):</b>
      * Raw {@link DataIntegrityViolationException} messages often contain sensitive SQL information.
      * This handler intercepts the Hibernate-level exception and replaces it with a 
      * generic "Conflict" status (409).</p>
@@ -108,8 +149,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiError> handleDataIntegrityViolationException(DataIntegrityViolationException e, HttpServletRequest request) {
         logger.error("Database integrity violation: {}", e.getMessage());
-        // For security, don't expose raw SQL details, but give a hint
-        String message = "Database conflict: This record (likely email) already exists.";
+        String message = messageHelper.getMessage("user.register.email_exists");
         ApiError apiError = ApiError.of(HttpStatus.CONFLICT.value(), "Conflict", message, request.getRequestURI());
         return ResponseEntity.status(HttpStatus.CONFLICT).body(apiError);
     }
@@ -135,7 +175,7 @@ public class GlobalExceptionHandler {
                 .map(err -> err.getField() + ": " + err.getDefaultMessage())
                 .collect(Collectors.joining(", "));
         
-        ApiError apiError = ApiError.of(HttpStatus.BAD_REQUEST.value(), "Validation Failed", errors, request.getRequestURI());
+        ApiError apiError = ApiError.of(HttpStatus.BAD_REQUEST.value(), messageHelper.getMessage("system.validation.failure"), errors, request.getRequestURI());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(apiError);
     }
 
@@ -168,10 +208,6 @@ public class GlobalExceptionHandler {
      * Triggered when a request is syntactically correct but violates business logic (e.g., invalid OTP,
      * illegal state transition).</p>
      *
-     * <p><b>Developer Note:</b>
-     * While {@link IllegalArgumentException} is a standard Java exception, we use it here
-     * specifically for business-level validation failures found in the Helper or Service layers.</p>
-     *
      * @param e The illegal argument exception.
      * @param request The current web request.
      * @return A standardized 400 Bad Request error response.
@@ -181,6 +217,10 @@ public class GlobalExceptionHandler {
         ApiError apiError = ApiError.of(HttpStatus.BAD_REQUEST.value(), "Bad Request", e.getMessage(), request.getRequestURI());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(apiError);
     }
+
+    // ===================================================================================
+    // SECTION 4: Fallback Exceptions (System Errors)
+    // ===================================================================================
 
     /**
      * Unhandled Internal System Failures.
@@ -199,8 +239,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleGenericException(Exception e, HttpServletRequest request) {
         logger.error("Unhandled exception occurred: ", e);
-        ApiError apiError = ApiError.of(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Internal Server Error", "An unexpected error occurred", request.getRequestURI());
+        ApiError apiError = ApiError.of(HttpStatus.INTERNAL_SERVER_ERROR.value(), "Internal Server Error", messageHelper.getMessage("system.error.unexpected"), request.getRequestURI());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(apiError);
     }
 }
+
 

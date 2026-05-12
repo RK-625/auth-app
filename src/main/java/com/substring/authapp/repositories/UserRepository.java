@@ -7,29 +7,40 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * <h1>Central Data Access Object (DAO) for managing {@link User} entities.</h1>
+ * <h1>Core Identity Data Access Provider</h1>
+ *
+ * <p>Central repository for managing {@link User} entities. This interface serves 
+ * as the primary gateway for identity retrieval and persistence during the 
+ * authentication and authorization lifecycles.</p>
  *
  * <p><b>Implementation Workflow:</b>
- * 1. <b>Method Parsing:</b> Spring Data JPA parses method names (e.g., {@code findByEmail}) at startup to generate the underlying JPQL.
- * 2. <b>Proxy Execution:</b> At runtime, a JDK Dynamic Proxy intercepts calls and executes the generated SQL via the {@code EntityManager}.
- * 3. <b>Result Mapping:</b> The returned JDBC {@code ResultSet} is mapped back into managed JPA entities within the current persistence context.
+ * 1. <b>Method Parsing:</b> Spring Data JPA parses method signatures at startup to generate JPQL.
+ * 2. <b>Proxy Generation:</b> At runtime, a JDK Dynamic Proxy ({@code SimpleJpaRepository}) handles execution.
+ * 3. <b>Transaction Boundary:</b> Operations are wrapped in transactions via the {@code TransactionInterceptor}.
+ * 4. <b>Result Mapping:</b> Hibernate maps the {@code ResultSet} to the {@link User} domain model.
  * </p>
  *
- * <p><b>Behind the Scenes:</b>
- * This repository leverages <b>Spring Data JPA Proxying</b>. Instead of a concrete implementation, Spring provides a proxy that 
- * delegates to {@code SimpleJpaRepository}. For the {@code findByEmail} method, the system relies on an <b>Index-Driven Lookup</b> 
- * on the database's {@code email} column, ensuring $O(1)$ or $O(\log n)$ search complexity, which is critical for high-frequency 
- * authentication handshakes.
- * </p>
+ * <p><b>Behind the Scenes (Component Interaction):</b>
+ * This repository utilizes <b>Spring Data JPA Proxy Generation</b> to eliminate 
+ * boilerplate DAO code. It leverages <b>Index-Driven Lookups</b> on the {@code user_email} 
+ * column (defined at the entity level) to ensure O(1) retrieval performance during 
+ * high-frequency login attempts. The {@link com.substring.authapp.security.CustomUserDetailService} 
+ * relies on this proxy to hydrate the security principal efficiently.</p>
  *
- * <p><b>Design Rationale:</b>
- * The repository pattern is chosen to abstract the underlying persistence technology. By using {@link UUID} as the primary key, 
- * we prevent ID enumeration attacks and ensure global uniqueness across distributed systems, while the index-driven lookups 
- * mitigate performance bottlenecks during the {@code CustomUserDetailService} lookup phase.
+ * <p><b>Design Rationale (The "Why"):</b>
+ * Abstracting data access through an interface allows the business layer to remain 
+ * agnostic of the underlying persistence implementation. The use of unique indices 
+ * on the email column not only enforces business rules but also optimizes the 
+ * <b>Persistence Context</b> lookup speed, critical for maintaining low latency 
+ * in the authentication handshake.
  * </p>
  */
 public interface UserRepository extends JpaRepository<User, UUID> {
-    
+
+    // ===================================================================================
+    // SECTION 1: Identity Discovery
+    // ===================================================================================
+
     /**
      * Finds a user by their unique email address.
      * 
@@ -55,6 +66,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      * @return true if the email is already registered in the system.
      */
     boolean existsByEmail(String email);
+
+    // ===================================================================================
+    // SECTION 2: Lifecycle Operations
+    // ===================================================================================
 
     /**
      * Hard delete of a user record.

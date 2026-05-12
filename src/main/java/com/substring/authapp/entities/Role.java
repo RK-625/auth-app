@@ -12,33 +12,34 @@ import java.util.UUID;
  * providing the foundation for declarative security.</p>
  *
  * <p><b>Implementation Workflow:</b>
- * 1. Defined as a set of static authorities in the {@code roles} table.
- * 2. Associated with {@link User} entities through a many-to-many relationship.
- * 3. Loaded during authentication and mapped to {@link org.springframework.security.core.GrantedAuthority}.
- * 4. Used by {@code AccessDecisionVoter}s to permit or deny entry to secured resources.
+ * 1. <b>Definition:</b> Static authorities stored in the {@code roles} table.
+ * 2. <b>Association:</b> Linked to {@link User} via many-to-many relationship.
+ * 3. <b>Handshake:</b> Managed by the <b>Persistence Context</b> during security principal hydration.
+ * 4. <b>Enforcement:</b> Mapped to {@link org.springframework.security.core.GrantedAuthority}.
  * </p>
  *
- * <p><b>Behind the Scenes:</b>
- * This entity maps security levels to persistent database records. It uses a {@link UserRole} 
- * enum to ensure type safety and prevent the injection of arbitrary role names. The {@code role_name} 
- * column is indexed and unique to maintain integrity across the system.
+ * <p><b>Behind the Scenes (Component Interaction):</b>
+ * This entity is managed as a read-heavy component within the <b>Persistence Context</b>. 
+ * Since roles are typically immutable after initialization, it does not implement 
+ * <b>Optimistic Locking</b> via {@code @Version}. Structural integrity is maintained 
+ * through strict <b>Database Constraints</b>.
  * </p>
  *
- * <p><b>Security Integrity:</b>
+ * <p><b>Database Constraints & Persistence Logic:</b>
  * <ul>
- *   <li><b>{@code @Column(unique = true)}:</b> Enforces the uniqueness of role names at the schema 
- *       level, preventing redundant or conflicting authority definitions that could 
- *       weaken the RBAC model.</li>
- *   <li><b>{@link UserRole}:</b> A type-safe enumeration that acts as a compile-time 
- *       whitelist for all permissible system authorities.</li>
+ *   <li><b>Unique Authority:</b> The {@code role_name} column is marked as <b>Unique</b> and 
+ *       <b>Non-nullable</b>, ensuring that no duplicate or orphan roles exist in the 
+ *       <b>Persistence Context</b>.</li>
+ *   <li><b>Stable Identifiers:</b> Uses {@link UUID} identifiers to prevent ID-guessing 
+ *       attacks and ensure compatibility across different database vendors during 
+ *       initialization (e.g., {@code data.sql}).</li>
  * </ul>
  * </p>
  *
- * <p><b>Design Rationale:</b>
- * Roles are the building blocks of the system's authorization layer. They are mapped to 
- * {@link org.springframework.security.core.GrantedAuthority} during the authentication 
- * process, allowing for granular access control on API endpoints via annotations like 
- * {@code @PreAuthorize("hasRole('ADMIN')")}.
+ * <p><b>Design Rationale (The "Why"):</b>
+ * Using a persistent entity for roles instead of simple strings allows for dynamic 
+ * role management and complex relationship mapping, while the {@link UserRole} 
+ * enum ensures type safety during development.
  * </p>
  */
 @Getter
@@ -49,6 +50,11 @@ import java.util.UUID;
 @Entity
 @Table(name = "roles")
 public class Role {
+
+    // ===================================================================================
+    // SECTION 1: Identity & Authority (Fields)
+    // ===================================================================================
+
     /**
      * Unique identifier for the role.
      * Initialized with a random UUID to ensure uniqueness during manual 
