@@ -513,7 +513,14 @@ public class AuthServiceImpl implements AuthService {
                 .orElseThrow(() -> new BadCredentialsException(messageHelper.getMessage("token.refresh.not_found_db")));
 
         // 2. Critical security checks
-        if (refreshTokenOb.isRevoked()) throw new BadCredentialsException(messageHelper.getMessage("token.refresh.revoked"));
+        if (refreshTokenOb.isRevoked()) {
+            // DETECTED COMPROMISE: "Token Family Revocation" (The Kill Switch)
+            // If a revoked token is reused, we assume the whole session family is stolen.
+            log.warn("DETECTED COMPROMISE: Revoked token reuse attempt for user: {}. Triggering Kill-Switch.", userId);
+            refreshTokenRepository.revokeAllByUser(refreshTokenOb.getUser());
+            throw new BadCredentialsException(messageHelper.getMessage("token.refresh.compromised"));
+        }
+        
         if (refreshTokenOb.getExpiresAt().isBefore(Instant.now())) throw new BadCredentialsException(messageHelper.getMessage("token.refresh.expired"));
 
         // 3. Ownership check: ensure the token belongs to the user specified in the JWT payload

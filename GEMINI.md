@@ -55,7 +55,20 @@ Real-time tracking is implemented via Micrometer for the following critical even
 - `auth.login.success`: Tracked in `AuthServiceImpl`.
 - `auth.login.failure`: Tracked in `AuthController`.
 
-## 5. Development Conventions
+## 5. Security Hardening & Concurrency
+
+### Token Rotation Safety (Optimistic Locking)
+The system prevents race conditions during concurrent refresh token rotation using **JPA Optimistic Locking**.
+- **Mechanism:** The `RefreshToken` entity includes a `@Version` field.
+- **Outcome:** If two requests attempt to rotate the same token simultaneously, the second request fails with an `ObjectOptimisticLockingFailureException` (mapped to HTTP 409 Conflict), preventing duplicate session issuance.
+
+### Token Theft Prevention (Family Revocation)
+To mitigate "Token Reuse" attacks, the system implements the **Kill-Switch** pattern:
+- **Detection:** If a token that has already been marked as `revoked` is presented during the refresh flow, the system assumes a compromise.
+- **Action:** The `AuthServiceImpl` triggers a **Token Family Revocation**, immediately invalidating *all* active refresh tokens for that user.
+- **Outcome:** The legitimate user and the attacker are both forced to re-authenticate via password, flushing all compromised sessions from the system.
+
+## 6. Development Conventions
 
 ### Testing Standards (Spring Boot 3.4+)
 - **Mocking:** All tests must use `@MockitoBean` instead of the deprecated `@MockBean`.
@@ -65,8 +78,7 @@ Real-time tracking is implemented via Micrometer for the following critical even
 - **Layer:** Strictly enforced at the DTO layer using JSR-303 annotations.
 - **Outcome:** Invalid requests are rejected at the controller boundary before reaching service logic.
 
-## 6. Maintenance & Garbage Collection
-
+### Unified Error Handling
 - **GlobalExceptionHandler:** Centralized mapping of all exceptions to a standard `ApiError` schema.
 - **Uniformity:** All error responses return consistent HTTP status codes and localized messages via `MessageHelper`.
 
@@ -77,7 +89,7 @@ Real-time tracking is implemented via Micrometer for the following critical even
 - `security`: JWT logic, filters, and OAuth2 handlers.
 - `services`: Business logic and handshake management.
 
-## 5. Maintenance & Garbage Collection
+## 7. Maintenance & Garbage Collection
 
 ### CleanupService
 An automated, hourly Scheduled task responsible for "Garbage Collection" of stale security artifacts:
@@ -85,7 +97,7 @@ An automated, hourly Scheduled task responsible for "Garbage Collection" of stal
 - Cleans up abandoned `SignUpObject` and `ResetPasswordObject` handshake state.
 - Ensures the database does not accumulate transient "handshake noise."
 
-## 6. Key File Index
+## 8. Key File Index
 
 | Component | Path |
 | :--- | :--- |

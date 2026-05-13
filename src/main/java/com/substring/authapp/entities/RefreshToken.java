@@ -25,9 +25,9 @@ import java.util.UUID;
  *
  * <p><b>Behind the Scenes (Component Interaction):</b>
  * This entity is managed within the <b>Persistence Context</b>, ensuring that token 
- * revocation is atomic and visible across all nodes. It omits <b>Optimistic Locking</b> 
- * as tokens are typically subject to single-write revocation, but enforces 
- * integrity via multi-column <b>Database Constraints</b>.
+ * revocation is atomic and visible across all nodes. It utilizes <b>Optimistic Locking</b> 
+ * (via the {@code version} field) to prevent race conditions during concurrent 
+ * token rotation, and enforces integrity via multi-column <b>Database Constraints</b>.
  * </p>
  *
  * <p><b>Database Constraints & Persistence Logic:</b>
@@ -110,6 +110,13 @@ public class RefreshToken {
      * If this token was rotated, this field points to the JTI of the successor token.
      */
     private String replacedByToken;
+
+    /**
+     * Version field for JPA Optimistic Locking.
+     * Prevents race conditions during concurrent token rotation.
+     */
+    @Version
+    private Long version;
 
     // ===================================================================================
     // SECTION 2: Domain Logic (Factory Methods)

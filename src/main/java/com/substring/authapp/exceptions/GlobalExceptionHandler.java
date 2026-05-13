@@ -4,6 +4,7 @@ import com.substring.authapp.dtos.common.ApiError;
 import com.substring.authapp.helpers.MessageHelper;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -216,6 +217,30 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleIllegalArgumentException(IllegalArgumentException e, HttpServletRequest request) {
         ApiError apiError = ApiError.of(HttpStatus.BAD_REQUEST.value(), "Bad Request", e.getMessage(), request.getRequestURI());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(apiError);
+    }
+
+    /**
+     * Concurrent Access and Race Condition Failures.
+     *
+     * <p><b>Triggering Conditions:</b>
+     * Triggered by JPA's <b>Optimistic Locking</b> mechanism when two concurrent requests 
+     * attempt to modify the same record (e.g., simultaneous refresh token rotation).</p>
+     *
+     * <p><b>Design Rationale:</b>
+     * By catching {@link ObjectOptimisticLockingFailureException}, we provide a 
+     * semantic 409 Conflict status. This allows the client to implement a 
+     * transparent retry strategy or inform the user that their session is being updated.</p>
+     *
+     * @param e The concurrency exception.
+     * @param request The current web request.
+     * @return A standardized 409 Conflict error response.
+     */
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ApiError> handleOptimisticLockingFailureException(ObjectOptimisticLockingFailureException e, HttpServletRequest request) {
+        logger.warn("Concurrency conflict detected: {}", e.getMessage());
+        String message = messageHelper.getMessage("system.error.concurrency_conflict");
+        ApiError apiError = ApiError.of(HttpStatus.CONFLICT.value(), "Conflict", message, request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(apiError);
     }
 
     // ===================================================================================

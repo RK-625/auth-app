@@ -1,8 +1,13 @@
 package com.substring.authapp.repositories;
 
 import com.substring.authapp.entities.RefreshToken;
+import com.substring.authapp.entities.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -55,4 +60,21 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
      * @return An {@link Optional} containing the token record if valid and existing.
      */
     Optional<RefreshToken> findByJti(String jti);
+
+    // ===================================================================================
+    // SECTION 2: Bulk Revocation (The "Kill Switch")
+    // ===================================================================================
+
+    /**
+     * <h1>Global Session Invalidation</h1>
+     * 
+     * <p>Revokes all refresh tokens belonging to a specific user. This is the 
+     * primary mechanism for the <b>"Token Family Revocation"</b> security pattern, 
+     * used when a compromised token is detected.</p>
+     * 
+     * @param user The user whose sessions should be terminated.
+     */
+    @Modifying
+    @Query("UPDATE RefreshToken r SET r.revoked = true WHERE r.user = :user AND r.revoked = false")
+    void revokeAllByUser(@Param("user") User user);
 }
