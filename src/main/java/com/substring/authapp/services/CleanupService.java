@@ -42,6 +42,11 @@ public class CleanupService {
 
     private final SignUpObjectRepository signUpObjectRepository;
     private final ResetPasswordObjectRepository resetPasswordObjectRepository;
+    private Instant lastRun;
+
+    public Instant getLastRun() {
+        return lastRun;
+    }
 
     // ===================================================================================
     // SECTION 2: Maintenance Tasks (Scheduled)
@@ -72,6 +77,7 @@ public class CleanupService {
     @Transactional
     public void purgeExpiredHandshakes() {
         log.info("Initiating background purge of expired security handshake records...");
+        this.lastRun = Instant.now();
         try {
             signUpObjectRepository.deleteByExpiresAtBefore(Instant.now());
             resetPasswordObjectRepository.deleteByExpiresAtBefore(Instant.now());

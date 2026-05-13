@@ -5,6 +5,7 @@ import com.substring.authapp.dtos.common.ApiError;
 import com.substring.authapp.helpers.MessageHelper;
 import com.substring.authapp.services.RateLimiterService;
 import io.github.bucket4j.Bucket;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -49,6 +50,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     private final RateLimiterService rateLimiterService;
     private final ObjectMapper objectMapper;
     private final MessageHelper messageHelper;
+    private final MeterRegistry meterRegistry;
 
     /**
      * <h1>Bypass Strategy</h1>
@@ -97,6 +99,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
      */
     private void handleThrottlingViolation(HttpServletRequest request, HttpServletResponse response, String ipAddress) throws IOException {
         log.warn("Rate limit exceeded for IP: {}", ipAddress);
+        meterRegistry.counter("auth.rate.limit.blocked").increment();
 
         response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);

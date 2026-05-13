@@ -32,3 +32,25 @@ spring:
 
 server:
   port: 8082
+
+# -----------------------------------------------------------------------------
+# OBSERVABILITY & MONITORING (SPRING ACTUATOR)
+# -----------------------------------------------------------------------------
+management:
+  endpoints:
+    web:
+      exposure:
+        # Expose core monitoring endpoints. Prometheus is used for Grafana dashboards.
+        include: "health,info,metrics,prometheus"
+  endpoint:
+    health:
+      # 'show-details' is restricted to prevent leaking internal system states.
+      show-details: when_authorized
+      roles: "ADMIN"
+  info:
+    java:
+      enabled: true
+    os:
+      enabled: true
+    env:
+      enabled: true

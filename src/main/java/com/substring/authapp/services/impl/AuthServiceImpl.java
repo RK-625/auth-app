@@ -12,6 +12,7 @@ import com.substring.authapp.security.JwtService;
 import com.substring.authapp.services.AuthService;
 import com.substring.authapp.services.EmailService;
 import com.substring.authapp.services.UserService;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -97,6 +98,7 @@ public class AuthServiceImpl implements AuthService {
     private final JwtService jwtService;
     private final CookieService cookieService;
     private final ModelMapper modelMapper;
+    private final MeterRegistry meterRegistry;
 
     @Value("${security.otp.initial-ttl-seconds:300}")
     private long initialTtl;
@@ -127,6 +129,7 @@ public class AuthServiceImpl implements AuthService {
         RefreshToken refreshTokenOb = createRefreshToken(user);
         String refreshToken = jwtService.generateRefreshToken(user, refreshTokenOb.getJti());
 
+        meterRegistry.counter("auth.login.success").increment();
         return generateAuthenticatedResponse(response, user, accessToken, refreshToken);
     }
 

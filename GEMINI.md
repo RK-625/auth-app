@@ -39,13 +39,34 @@ Registration and password recovery utilize a structured handshake process:
 Security is enforced via an ordered chain in `SecurityConfig`:
 `RateLimitingFilter` -> `JwtAuthenticationFilter` -> `UsernamePasswordAuthenticationFilter`.
 
-## 4. Development Conventions
+## 4. Observability & Monitoring
+
+### Tiered Exposure Model
+To balance visibility with security, the application employs a tiered Actuator model:
+- **Public Layer:** `/actuator/health` is permitted for all traffic to support Liveness/Readiness probes by load balancers.
+- **Admin Layer:** All other endpoints (`/metrics`, `/prometheus`, `/env`) require `ROLE_ADMIN` and a valid JWT.
+
+### Custom Health Monitoring
+The system uses the `CleanupServiceHealthIndicator` to track the health of background maintenance tasks. This ensures that the "Hourly Garbage Collection" of stale tokens is functioning correctly.
+
+### Security Metrics (Counters)
+Real-time tracking is implemented via Micrometer for the following critical events:
+- `auth.rate.limit.blocked`: Tracked in `RateLimitingFilter`.
+- `auth.login.success`: Tracked in `AuthServiceImpl`.
+- `auth.login.failure`: Tracked in `AuthController`.
+
+## 5. Development Conventions
+
+### Testing Standards (Spring Boot 3.4+)
+- **Mocking:** All tests must use `@MockitoBean` instead of the deprecated `@MockBean`.
+- **Validation:** Integration tests must verify both API responses and subsequent database state transitions.
 
 ### Validation & "Fail-Fast"
 - **Layer:** Strictly enforced at the DTO layer using JSR-303 annotations.
 - **Outcome:** Invalid requests are rejected at the controller boundary before reaching service logic.
 
-### Unified Error Handling
+## 6. Maintenance & Garbage Collection
+
 - **GlobalExceptionHandler:** Centralized mapping of all exceptions to a standard `ApiError` schema.
 - **Uniformity:** All error responses return consistent HTTP status codes and localized messages via `MessageHelper`.
 
@@ -75,15 +96,3 @@ An automated, hourly Scheduled task responsible for "Garbage Collection" of stal
 | **GC Logic** | `src/main/java/com/substring/authapp/services/CleanupService.java` |
 | **Error Schema** | `src/main/java/com/substring/authapp/dtos/common/ApiError.java` |
 | **OAuth2 Entry** | `src/main/java/com/substring/authapp/security/OAuth2SuccessHandler.java` |
-
-## 7. Roadmap & Progress
-
-### 📋 Phase 1: Controller Layer Refactor (COMPLETED)
-- [x] Migrated all controller and integration tests from `@MockBean` to `@MockitoBean`.
-- [x] Updated imports to `org.springframework.test.context.bean.override.mockito.MockitoBean`.
-- [x] Verified compilation for all refactored test files.
-
-### 📋 Phase 2: "Grand Handshake" Integration Test (PLANNED)
-- [ ] Implement `FullSignupHandshakeTest.java` to simulate the end-to-end signup flow.
-- [ ] Verify database state transitions during the OTP verification and user provisioning steps.
-- [ ] Ensure cleanup of staging objects post-provisioning.

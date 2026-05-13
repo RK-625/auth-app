@@ -2,6 +2,7 @@ package com.substring.authapp.controllers;
 
 import com.substring.authapp.dtos.auth.*;
 import com.substring.authapp.services.AuthService;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -63,6 +64,7 @@ public class AuthController {
     private final AuthService authService;
     private final AuthenticationManager authenticationManager;
     private final MessageHelper messageHelper;
+    private final MeterRegistry meterRegistry;
 
     // ===================================================================================
     // SECTION 2: Core Authentication Handshakes
@@ -109,6 +111,7 @@ public class AuthController {
         try {
             return authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(loginRequest.email(), loginRequest.password()));
         } catch (Exception e) {
+            meterRegistry.counter("auth.login.failure").increment();
             throw new BadCredentialsException(messageHelper.getMessage("auth.login.invalid_credentials"));
         }
     }

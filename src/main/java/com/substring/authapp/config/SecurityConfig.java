@@ -150,9 +150,11 @@ public class SecurityConfig {
                             "/api/v1/auth/**",
                             "/oauth2/**",
                             "/login/**",
-                            "/error"
+                            "/error",
+                            "/actuator/health"
                         ).permitAll()
                         // 2. Role-based access control for administrative paths
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "ROOT")
                         .requestMatchers("/api/v1/root/**").hasRole("ROOT")
                         // 3. Protected endpoints requiring any valid authentication
