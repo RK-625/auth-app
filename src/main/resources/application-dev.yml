@@ -106,3 +106,5 @@ app:
       # Reusing the existing Mail variables for the Root User can it later for the root user's credentials
       email: ${MAIL_USERNAME}
       password: ${MAIL_PASSWORD}
+    oauth2:
+      redirect-url: "http://localhost:3000/oauth2/redirect/"

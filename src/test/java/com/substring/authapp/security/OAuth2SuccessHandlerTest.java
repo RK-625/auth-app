@@ -17,6 +17,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 
@@ -56,6 +57,7 @@ class OAuth2SuccessHandlerTest {
     void setUp() {
         request = mock(HttpServletRequest.class);
         response = mock(HttpServletResponse.class);
+        ReflectionTestUtils.setField(oAuth2SuccessHandler, "frontendRedirectUrl", "http://localhost:3000/oauth2/redirect/");
     }
 
     @Test

@@ -6,6 +6,7 @@ import com.substring.authapp.entities.User;
 import com.substring.authapp.entities.UserRole;
 import com.substring.authapp.repositories.RoleRepository;
 import com.substring.authapp.repositories.UserRepository;
+import com.substring.authapp.utils.PrivacyHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
@@ -104,7 +105,7 @@ public class DataSeeder implements CommandLineRunner {
      */
     private void injectRootUser() {
         if (!userRepository.existsByEmail(rootEmail)) {
-            log.info("   -> Injecting Master Root Identity: {}", rootEmail);
+            log.info("   -> Injecting Master Root Identity: {}", PrivacyHelper.maskEmail(rootEmail));
 
             // Updated: Pass the Enum directly instead of .name()
             Role rootRole = roleRepository.findByName(UserRole.ROLE_ROOT)
@@ -133,7 +134,7 @@ public class DataSeeder implements CommandLineRunner {
         String testEmail = "john@example.com";
 
         if (!userRepository.existsByEmail(testEmail)) {
-            log.info("   -> Injecting Test User Identity: {}", testEmail);
+            log.info("   -> Injecting Test User Identity: {}", PrivacyHelper.maskEmail(testEmail));
 
             Role userRole = roleRepository.findByName(UserRole.ROLE_USER)
                     .orElseThrow(() -> new IllegalStateException("Critical Failure: ROLE_USER not found"));

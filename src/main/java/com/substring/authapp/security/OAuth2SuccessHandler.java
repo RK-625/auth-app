@@ -5,11 +5,13 @@ import com.substring.authapp.repositories.RoleRepository;
 import com.substring.authapp.repositories.UserRepository;
 import com.substring.authapp.security.provider.GithubService;
 import com.substring.authapp.services.AuthService;
+import com.substring.authapp.utils.PrivacyHelper;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
@@ -72,6 +74,9 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
     private final OAuth2AuthorizedClientService authorizedClientService;
     private final AuthService authService;
 
+    @Value("${app.security.oauth2.redirect-url}")
+    private String frontendRedirectUrl;
+
     // ===================================================================================
     // SECTION 2: Constructor (Dependency Injection)
     // ===================================================================================
@@ -126,8 +131,8 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
         authService.generateOAuth2AuthenticatedResponse(user, response);
 
         // 4. Redirect back to frontend
-        String targetUrl = "http://localhost:3000/oauth2/redirect/";
-        logger.info("OAuth2 flow complete. Redirecting {} to: {}", email, targetUrl);
+        String targetUrl = frontendRedirectUrl;
+        logger.info("OAuth2 flow complete. Redirecting {} to: {}", PrivacyHelper.maskEmail(email), targetUrl);
         response.sendRedirect(targetUrl);
     }
 

@@ -36,3 +36,5 @@ app:
     root:
       email: root@test.com
       password: rootpassword
+    oauth2:
+      redirect-url: "http://localhost:3000/oauth2/redirect/"
