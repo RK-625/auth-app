@@ -108,3 +108,38 @@ An automated, hourly Scheduled task responsible for "Garbage Collection" of stal
 | **GC Logic** | `src/main/java/com/substring/authapp/services/CleanupService.java` |
 | **Error Schema** | `src/main/java/com/substring/authapp/dtos/common/ApiError.java` |
 | **OAuth2 Entry** | `src/main/java/com/substring/authapp/security/OAuth2SuccessHandler.java` |
+
+## 9. Containerization & Deployment
+
+### Multi-Stage Build Strategy
+The application utilizes a **Multi-Stage Dockerfile** to optimize for security and image size:
+- **Builder Stage:** Uses Maven on Alpine to compile the JAR and cache dependencies.
+- **Runtime Stage:** Uses a minimal JRE Alpine image.
+- **Security:** The application runs under a non-root `spring` user to minimize the attack surface.
+
+### Local Orchestration (Docker Compose)
+A complete development ecosystem is provided via `docker-compose.yml`, orchestrating:
+- **`auth-app`**: The backend service (Port 8082).
+- **`mysql`**: Persistence layer (Port 3307 externally, 3306 internally).
+- **`mailpit`**: SMTP testing server. Captures all outgoing emails (OTPs) in a local Web UI (Port 8025).
+
+### Environment Synchronization
+Docker Compose injects environment variables that override `application-dev.yml` settings, ensuring that the backend automatically routes to the containerized MySQL and Mailpit instances without manual configuration changes.
+
+## 10. Documentation Governance Policy
+
+### Standardized Format & Uniformity
+All updates to this document must adhere to the following strict hierarchical structure:
+1. **Overview**: Project mission and tech stack.
+2. **Architecture**: High-level patterns (Session Model, Handshakes).
+3. **Security**: Cryptography and active protection layers.
+4. **Monitoring**: Actuator tiers and custom metrics.
+5. **Concurrency**: Hardening against race conditions.
+6. **Conventions**: Development, testing, and error-handling standards.
+7. **Maintenance**: Background services and cleanup logic.
+8. **Index**: Direct file mapping.
+
+### Durable Instruction Philosophy
+- **No Transient Data**: Never store task progress, phase statuses, or bug-fix logs here. Use the private `MEMORY.md` for session-specific tracking.
+- **Technical Rationale**: Every architectural update must include a "Design Rationale" or "Behind the Scenes" explanation to preserve the "Living Textbook" quality.
+- **Semantic Consistency**: Use H2 (`##`) for major domains and H3 (`###`) for specific implementation details. Never use random bolding or unstructured lists for core instructions.

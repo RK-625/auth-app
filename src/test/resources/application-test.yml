@@ -20,7 +20,7 @@ security:
   jwt:
     secret: 9a65609d57a2f5f190e3f8a04b732629b3a4a9844f6f8972827179929f270929
     issuer: auth-app-test
-    acess-ttl-seconds: 3600
+    access-ttl-seconds: 3600
     refresh-ttl-seconds: 86400
     refresh-token-cookie-name: refresh_token
     cookie-secure: false

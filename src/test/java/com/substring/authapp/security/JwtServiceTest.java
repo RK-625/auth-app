@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("JwtService Unit Tests")
 class JwtServiceTest {
@@ -71,7 +71,8 @@ class JwtServiceTest {
         // Tamper with the signature (last part of JWT)
         String tamperedToken = token.substring(0, token.length() - 5) + "abcde";
 
-        assertThrows(SignatureException.class, () -> jwtService.parse(tamperedToken));
+        assertThatThrownBy(() -> jwtService.parse(tamperedToken))
+                .isInstanceOf(SignatureException.class);
     }
 
     @Test
@@ -86,7 +87,8 @@ class JwtServiceTest {
                 .signWith(jwtService.getKey(), Jwts.SIG.HS512)
                 .compact();
 
-        assertThrows(ExpiredJwtException.class, () -> jwtService.parse(expiredToken));
+        assertThatThrownBy(() -> jwtService.parse(expiredToken))
+                .isInstanceOf(ExpiredJwtException.class);
     }
 
     private User createMockUser() {

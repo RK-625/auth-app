@@ -16,8 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -75,7 +74,7 @@ class UserHelperTest {
 
         when(userRepository.existsByEmail(email)).thenReturn(false);
 
-        assertDoesNotThrow(() -> userHelper.validateUserForSignup(email, password));
+        userHelper.validateUserForSignup(email, password);
         verify(userRepository).existsByEmail(email);
     }
 
@@ -88,7 +87,8 @@ class UserHelperTest {
         when(userRepository.existsByEmail(email)).thenReturn(true);
         when(messageHelper.getMessage("user.register.email_exists")).thenReturn("Email exists");
 
-        assertThrows(IllegalArgumentException.class, () -> userHelper.validateUserForSignup(email, password));
+        assertThatThrownBy(() -> userHelper.validateUserForSignup(email, password))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -99,6 +99,7 @@ class UserHelperTest {
 
         when(messageHelper.getMessage("user.register.password_too_short")).thenReturn("Too short");
 
-        assertThrows(IllegalArgumentException.class, () -> userHelper.validateUserForSignup(email, password));
+        assertThatThrownBy(() -> userHelper.validateUserForSignup(email, password))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

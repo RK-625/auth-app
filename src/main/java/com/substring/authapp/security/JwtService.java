@@ -85,7 +85,7 @@ public class JwtService {
      */
     public JwtService(
             @Value("${security.jwt.secret}") String secretKey,
-            @Value("${security.jwt.acess-ttl-seconds}") long accessTtlSeconds,
+            @Value("${security.jwt.access-ttl-seconds}") long accessTtlSeconds,
             @Value("${security.jwt.refresh-ttl-seconds}") long refreshTtlSeconds,
             @Value("${security.jwt.issuer}") String issuer) {
         
