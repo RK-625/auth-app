@@ -56,6 +56,13 @@ class SecurityIntegrationTest {
     }
 
     @Test
+    @org.springframework.security.test.context.support.WithMockUser(roles = "USER")
+    void authenticatedUser_ToAdminEndpoint_ShouldReturn403Forbidden() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/users"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void rateLimiter_ShouldBlockRequestsAfterThreshold() throws Exception {
         LoginRequest request = new LoginRequest("attacker@test.com", "password123");
         String content = objectMapper.writeValueAsString(request);
