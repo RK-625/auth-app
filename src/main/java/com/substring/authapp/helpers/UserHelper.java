@@ -57,6 +57,9 @@ public class UserHelper {
     private final PasswordEncoder passwordEncoder;
     private final RoleRepository roleRepository;
 
+    @org.springframework.beans.factory.annotation.Value("${app.validation.min-password-length:6}")
+    private int minPasswordLength;
+
     // ===================================================================================
     // SECTION 2: Validation Logic (Public)
     // ===================================================================================
