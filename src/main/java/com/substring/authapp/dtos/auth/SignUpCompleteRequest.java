@@ -53,9 +53,6 @@ public class SignUpCompleteRequest implements Serializable {
     @Email(message = "{user.register.email_invalid}")
     private String email;
 
-    @NotBlank(message = "{auth.forget.otp_required}")
-    private String otp;
-
     @NotBlank(message = "{signup.validation.token_required}")
     private String signUpToken;
 

@@ -49,11 +49,10 @@ public interface AuthService {
     /**
      * Finalizes user creation after successful token verification.
      * @param email The user's email.
-     * @param otp The OTP code.
      * @param signUpToken The UUID token from Phase 2.
      * @param password The raw password to be hashed.
      */
-    void verifySignUpToken(String email ,String otp ,String signUpToken, String password);
+    void verifySignUpToken(String email ,String signUpToken, String password);
 
     // ===================================================================================
     // SECTION 2: Recovery Handshake (Password Reset)

@@ -238,7 +238,7 @@ public class AuthController {
      */
     @PostMapping("/signup/verifytoken")
     public ResponseEntity<Void> signUpRequestThird(@Valid @RequestBody SignUpCompleteRequest request) {
-        authService.verifySignUpToken(request.getEmail(), request.getOtp(), request.getSignUpToken(), request.getPassword());
+        authService.verifySignUpToken(request.getEmail(), request.getSignUpToken(), request.getPassword());
         return ResponseEntity.ok().build();
     }
 

@@ -286,18 +286,17 @@ public class AuthServiceImpl implements AuthService {
      * immediate cleanup of the staging record.</p>
      * 
      * @param email User email.
-     * @param otp OTP used in Phase 2.
      * @param signUpToken UUID token issued in Phase 2.
      * @param password The raw password for the new account.
      */
     @Override
     @Transactional
-    public void verifySignUpToken(String email, String otp, String signUpToken, String password) {
+    public void verifySignUpToken(String email, String signUpToken, String password) {
         userHelper.validateUserForSignup(email, password); 
 
         // Critical: Check for used=true to prevent Phase 2 bypass
         SignUpObject validObject = signUpObjectRepository
-                .findByEmailAndOtpAndExpiresAtGreaterThanAndSignUpToken(email, otp, Instant.now(), UUID.fromString(signUpToken))
+                .findByEmailAndExpiresAtGreaterThanAndSignUpToken(email, Instant.now(), UUID.fromString(signUpToken))
                 .filter(SignUpObject::isUsed) // Enforce that OTP was verified
                 .orElseThrow(() -> new BadCredentialsException(messageHelper.getMessage("signup.validation.failure")));
 

@@ -143,7 +143,7 @@ public class SecurityConfig {
         http.csrf(AbstractHttpConfigurer::disable) // CSRF is disabled as we use stateless JWTs
                 .cors(Customizer.withDefaults())
                 // Stateless session management: No HTTP sessions are created or used by Spring Security
-                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
                         // 1. Publicly accessible endpoints (Auth, OAuth2, Error)
                         .requestMatchers(
