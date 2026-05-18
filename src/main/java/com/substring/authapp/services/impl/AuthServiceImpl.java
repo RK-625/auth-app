@@ -606,6 +606,7 @@ public class AuthServiceImpl implements AuthService {
      * 2. <b>Credential Generation:</b> Signs a fresh Refresh JWT containing the JTI.
      * 3. <b>Cookie Injection:</b> Attaches the token as a secure, HttpOnly cookie to the {@link HttpServletResponse}.
      * 4. <b>Header Hardening:</b> Adds Cache-Control directives to prevent token leakage.
+     * 5. <b>Access Provisioning:</b> Generates a stateless Access Token for the frontend.
      * </p>
      * 
      * <p><b>Design Rationale (The "Why"):</b>
@@ -616,9 +617,10 @@ public class AuthServiceImpl implements AuthService {
      * 
      * @param user The provisioned social user.
      * @param response The HTTP response for cookie injection.
+     * @return The generated Access Token string.
      */
     @Override
-    public void generateOAuth2AuthenticatedResponse(User user, HttpServletResponse response) {
+    public String generateOAuth2AuthenticatedResponse(User user, HttpServletResponse response) {
         RefreshToken refreshTokenOb = createRefreshToken(user);
 
         String refreshToken = jwtService.generateRefreshToken(user, refreshTokenOb.getJti());
@@ -626,6 +628,9 @@ public class AuthServiceImpl implements AuthService {
         // Handshake Finalization: Inject security cookies directly
         cookieService.attachRefreshCookie(response, refreshToken, (int) jwtService.getRefreshTtlSeconds());
         cookieService.addNoStoreHeadersToResponse(response);
+
+        // Return the Access Token for the frontend handshake
+        return jwtService.generateAccessToken(user);
     }
 
 }

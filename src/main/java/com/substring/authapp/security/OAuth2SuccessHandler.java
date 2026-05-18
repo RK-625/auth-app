@@ -109,8 +109,14 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
         String email = (String) attributes.get("email");
         Provider provider = (Provider) attributes.get("provider");
 
-        // 2. Synchronize social user (JIT Provisioning)
-        User user = userRepository.findByEmail(email).orElseGet(() -> {
+        // 2. Synchronize social user (JIT Provisioning & Attribute Sync)
+        User user = userRepository.findByEmail(email).map(existingUser -> {
+            // Attribute Synchronization: Update profile if it changed
+            existingUser.setName((String) attributes.get("name"));
+            existingUser.setImage((String) attributes.get("image"));
+            existingUser.setUpdatedAt(Instant.now());
+            return userRepository.save(existingUser);
+        }).orElseGet(() -> {
             Role userRole = roleRepository.findByName(UserRole.ROLE_USER)
                     .orElseThrow(() -> new IllegalStateException("Default role ROLE_USER not found"));
 
@@ -128,11 +134,11 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
         });
 
         // 3. Convert OAuth2 session into stateless JWT and stateful refresh token
-        authService.generateOAuth2AuthenticatedResponse(user, response);
+        String accessToken = authService.generateOAuth2AuthenticatedResponse(user, response);
 
-        // 4. Redirect back to frontend
-        String targetUrl = frontendRedirectUrl;
-        logger.info("OAuth2 flow complete. Redirecting {} to: {}", PrivacyHelper.maskEmail(email), targetUrl);
+        // 4. Redirect back to frontend with the Access Token
+        String targetUrl = frontendRedirectUrl + "?token=" + accessToken;
+        logger.info("OAuth2 flow complete. Redirecting {} to: {}", PrivacyHelper.maskEmail(email), frontendRedirectUrl);
         response.sendRedirect(targetUrl);
     }
 

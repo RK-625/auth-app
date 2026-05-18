@@ -159,6 +159,7 @@ public interface AuthService {
      * 
      * @param user The provisioned social user.
      * @param response The HTTP response for cookie injection.
+     * @return The generated Access Token string.
      */
-    void generateOAuth2AuthenticatedResponse(User user, HttpServletResponse response);
+    String generateOAuth2AuthenticatedResponse(User user, HttpServletResponse response);
 }
