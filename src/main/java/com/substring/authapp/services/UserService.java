@@ -3,7 +3,12 @@ package com.substring.authapp.services;
 import com.substring.authapp.dtos.admin.AdminUserCreateRequest;
 import com.substring.authapp.dtos.admin.ManagementUserResponse;
 import com.substring.authapp.dtos.user.AuthUserResponse;
+import com.substring.authapp.dtos.user.PasswordChangeRequest;
 import com.substring.authapp.dtos.user.UserUpdateRequest;
+import com.substring.authapp.entities.User;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 import java.util.UUID;
 
 /**
@@ -55,6 +60,13 @@ public interface UserService {
      * @param userId The unique ID of the account to deactivate.
      */
     void deleteUser(UUID userId);
+
+    /**
+     * Changes the password for an authenticated user.
+     * @param request The password change payload.
+     * @param currentUser The authenticated principal.
+     */
+    void changePassword(PasswordChangeRequest request, User currentUser);
 
     // ===================================================================================
     // SECTION 3: Identity Retrieval (Query)

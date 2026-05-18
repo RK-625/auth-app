@@ -3,6 +3,7 @@ package com.substring.authapp.controllers;
 import com.substring.authapp.dtos.admin.AdminUserCreateRequest;
 import com.substring.authapp.dtos.admin.ManagementUserResponse;
 import com.substring.authapp.dtos.user.AuthUserResponse;
+import com.substring.authapp.dtos.user.PasswordChangeRequest;
 import com.substring.authapp.dtos.user.UserUpdateRequest;
 import com.substring.authapp.entities.User;
 import com.substring.authapp.entities.UserRole;
@@ -10,6 +11,8 @@ import com.substring.authapp.helpers.MessageHelper;
 import com.substring.authapp.services.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -228,5 +231,32 @@ public class UserController {
         }
 
         return ResponseEntity.ok(userService.updateUser(request, userId));
+    }
+
+    /**
+     * Self-service endpoint to change password.
+     *
+     * @param request The password change payload.
+     * @param currentUser The currently authenticated principal.
+     * @return ResponseEntity with 204 No Content status.
+     */
+    @PostMapping("/user/me/password")
+    public ResponseEntity<Void> changePassword(
+            @Valid @RequestBody PasswordChangeRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        userService.changePassword(request, currentUser);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Self-service endpoint to delete the authenticated user's account.
+     *
+     * @param currentUser The currently authenticated principal.
+     * @return ResponseEntity with 204 No Content status.
+     */
+    @DeleteMapping("/user/me")
+    public ResponseEntity<Void> deleteSelfAccount(@AuthenticationPrincipal User currentUser) {
+        userService.deleteUser(currentUser.getId());
+        return ResponseEntity.noContent().build();
     }
 }

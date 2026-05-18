@@ -1,6 +1,8 @@
 package com.substring.authapp.repositories;
 
 import com.substring.authapp.entities.User;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;
@@ -77,6 +79,13 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      * <p><b>Design Rationale:</b>
      * While soft deletes are common, a hard delete is provided for GDRP compliance and data purging. 
      * This operation is automatically wrapped in a transaction by the Spring Data proxy.
+     * </p>
+     * 
+     * @param id The UUID of the user to purge.
+     */
+    void deleteUserById(UUID id);
+}
+by the Spring Data proxy.
      * </p>
      * 
      * @param id The UUID of the user to purge.
