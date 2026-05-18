@@ -82,6 +82,11 @@ To mitigate "Token Reuse" attacks, the system implements the **Kill-Switch** pat
 - **GlobalExceptionHandler:** Centralized mapping of all exceptions to a standard `ApiError` schema.
 - **Uniformity:** All error responses return consistent HTTP status codes and localized messages via `MessageHelper`.
 
+### Logging Privacy & PII Redaction
+- **Sanitization:** All Personally Identifiable Information (PII), specifically email addresses, MUST be masked before being logged in system logs (e.g., in `DataSeeder` or `OAuth2SuccessHandler`).
+- **Utility:** Use `PrivacyHelper.maskEmail(email)` to ensure consistent redaction (e.g., `j***e@example.com`).
+- **Rationale:** Prevents sensitive data from leaking into log aggregators or third-party monitoring tools, ensuring compliance with privacy regulations (GDPR, CCPA).
+
 ### Package Organization
 - `config`: Infrastructure and security orchestration.
 - `dtos`: "Fail-Fast" data transfer objects.
@@ -108,6 +113,7 @@ An automated, hourly Scheduled task responsible for "Garbage Collection" of stal
 | **GC Logic** | `src/main/java/com/substring/authapp/services/CleanupService.java` |
 | **Error Schema** | `src/main/java/com/substring/authapp/dtos/common/ApiError.java` |
 | **OAuth2 Entry** | `src/main/java/com/substring/authapp/security/OAuth2SuccessHandler.java` |
+| **Redirect Config** | `src/main/resources/application-dev.yml` (app.security.oauth2.redirect-url) |
 
 ## 9. Containerization & Deployment
 
