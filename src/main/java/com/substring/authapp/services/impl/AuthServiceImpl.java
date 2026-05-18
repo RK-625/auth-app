@@ -584,8 +584,18 @@ public class AuthServiceImpl implements AuthService {
         // 2. Add security headers to prevent token caching in the browser
         cookieService.addNoStoreHeadersToResponse(response);
 
-        // 3. Map User entity to minimalist Auth View for the response body
-        AuthUserResponse authUserResponse = modelMapper.map(user, AuthUserResponse.class);
+        // 3. Map User entity to minimalist Auth View for the response body (Manual Mapping for Performance)
+        AuthUserResponse authUserResponse = AuthUserResponse.builder()
+                .id(user.getId())
+                .email(user.getEmail())
+                .name(user.getName())
+                .image(user.getImage())
+                .enabled(user.isEnabled())
+                .createdAt(user.getCreatedAt())
+                .updatedAt(user.getUpdatedAt())
+                .provider(user.getProvider())
+                .roles(user.getRoles().stream().map(Role::getName).toList())
+                .build();
 
         // 4. Construct and return the final TokenResponse body
         return TokenResponse.builder()
