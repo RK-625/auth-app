@@ -116,6 +116,13 @@ public class ResetPasswordObject {
      */
     private Instant lastSentAt;
 
+    /**
+     * Optimistic Locking version field.
+     * Prevents race conditions during concurrent updates to the reset request.
+     */
+    @Version
+    private Integer version;
+
     // ===================================================================================
     // SECTION 3: Constructors & Domain Logic
     // ===================================================================================

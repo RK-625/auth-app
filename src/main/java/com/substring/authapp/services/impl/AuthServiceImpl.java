@@ -234,6 +234,10 @@ public class AuthServiceImpl implements AuthService {
             finalOtp = newKeys.getFirst();
             signUpObjectRepository.save(existing);
         } else {
+            // CONCURRENCY HARDENING: Atomic cleanup of potential stale records 
+            // for the same email that might have been inserted between the check and here.
+            signUpObjectRepository.deleteByEmail(request.getEmail());
+
             // Use Generic Factory for new requests
             var keys = userHelper.generateUniqueHandshakeKeys(k -> false); // New record for this email
             SignUpObject newSignup = new SignUpObject(request.getEmail(), keys.getFirst(), keys.getSecond(), initialTtl);

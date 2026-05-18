@@ -72,6 +72,16 @@ public interface SignUpObjectRepository extends JpaRepository<SignUpObject, UUID
     Optional<SignUpObject> findByEmailAndOtpAndExpiresAtGreaterThanAndSignUpToken(String email, String otp, Instant expiresAt, UUID signUpToken);
 
     /**
+     * Validates the terminal phase of the registration handshake without redundant OTP.
+     * 
+     * @param email User email.
+     * @param expiresAt Expiration boundary.
+     * @param signUpToken Secure UUID issued in Phase 2.
+     * @return An {@link Optional} containing the record if valid.
+     */
+    Optional<SignUpObject> findByEmailAndExpiresAtGreaterThanAndSignUpToken(String email, Instant expiresAt, UUID signUpToken);
+
+    /**
      * Predicate check for active OTPs.
      * 
      * @param email User email.
