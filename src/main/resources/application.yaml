@@ -29,6 +29,9 @@ spring:
           auth: true
           starttls:
             enable: true
+  threads:
+    virtual:
+          enabled: true
 
 server:
   port: 8082
@@ -36,10 +39,6 @@ server:
 # -----------------------------------------------------------------------------
 # RUNTIME OPTIMIZATIONS (JAVA 21+)
 # -----------------------------------------------------------------------------
-spring:
-  threads:
-    virtual:
-      enabled: true
 
 # -----------------------------------------------------------------------------
 # APPLICATION VALIDATION RULES
@@ -47,6 +46,7 @@ spring:
 app:
   validation:
     min-password-length: 6
+    max-password-length: 72
 
 # -----------------------------------------------------------------------------
 # OBSERVABILITY & MONITORING (SPRING ACTUATOR)

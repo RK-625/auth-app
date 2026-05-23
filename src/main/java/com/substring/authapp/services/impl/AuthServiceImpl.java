@@ -414,6 +414,7 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public void resetPassword(String email, String otp, String resetToken, String newPassword) {
         User user = userHelper.validateAndGetUserForAuth(email);
+        userHelper.validateUserForSignup(email, newPassword);
 
         // Final security check: verify that this specific OTP/Token combo was verified and hasn't expired
         boolean valid = resetPasswordObjectRepository
@@ -584,17 +585,19 @@ public class AuthServiceImpl implements AuthService {
         // 2. Add security headers to prevent token caching in the browser
         cookieService.addNoStoreHeadersToResponse(response);
 
-        // 3. Map User entity to minimalist Auth View for the response body (Manual Mapping for Performance)
+        // 3. Map User entity to minimalist Auth View for the response body
         AuthUserResponse authUserResponse = AuthUserResponse.builder()
                 .id(user.getId())
                 .email(user.getEmail())
                 .name(user.getName())
                 .image(user.getImage())
-                .enabled(user.isEnabled())
-                .createdAt(user.getCreatedAt())
-                .updatedAt(user.getUpdatedAt())
                 .provider(user.getProvider())
-                .roles(user.getRoles().stream().map(Role::getName).toList())
+                .roles(user.getRoles().stream()
+                        .map(role -> com.substring.authapp.dtos.admin.RoleDto.builder()
+                                .id(role.getId())
+                                .name(role.getName().name())
+                                .build())
+                        .collect(java.util.stream.Collectors.toSet()))
                 .build();
 
         // 4. Construct and return the final TokenResponse body

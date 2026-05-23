@@ -85,10 +85,3 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      */
     void deleteUserById(UUID id);
 }
-by the Spring Data proxy.
-     * </p>
-     * 
-     * @param id The UUID of the user to purge.
-     */
-    void deleteUserById(UUID id);
-}

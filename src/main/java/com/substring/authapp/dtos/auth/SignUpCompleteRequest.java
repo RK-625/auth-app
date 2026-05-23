@@ -61,6 +61,6 @@ public class SignUpCompleteRequest implements Serializable {
     // ===================================================================================
 
     @NotBlank(message = "{user.register.password_required}")
-    @Size(min = 6, max = 15, message = "{user.register.password_too_short}")
+    @Size(min = 6, max = 72, message = "{user.register.password_too_short}")
     private String password;
 }

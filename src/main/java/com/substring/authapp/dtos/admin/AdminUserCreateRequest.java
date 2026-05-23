@@ -48,7 +48,7 @@ public class AdminUserCreateRequest implements Serializable {
     private String email;
 
     @NotBlank(message = "{user.register.password_required}")
-    @Size(min = 8, max = 72, message = "{user.register.password_too_short}")
+    @Size(min = 6, max = 72, message = "{user.register.password_too_short}")
     private String password;
 
     // ===================================================================================

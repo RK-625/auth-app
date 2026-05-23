@@ -94,7 +94,7 @@ public class FullSignupHandshakeTest {
         assertThat(signUpTokenStr).isNotBlank();
 
         // Phase 3: POST /api/v1/auth/signup/verifytoken
-        SignUpCompleteRequest completeRequest = new SignUpCompleteRequest(testEmail, otp, signUpTokenStr, testPassword);
+        SignUpCompleteRequest completeRequest = new SignUpCompleteRequest(testEmail, signUpTokenStr, testPassword);
         mockMvc.perform(post("/api/v1/auth/signup/verifytoken")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(completeRequest)))

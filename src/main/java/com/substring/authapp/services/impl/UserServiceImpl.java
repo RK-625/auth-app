@@ -266,23 +266,4 @@ public class UserServiceImpl implements UserService {
                 .map(u -> modelMapper.map(u, ManagementUserResponse.class))
                 .toList();
     }
-}xception(messageHelper.getMessage("user.profile.not_found")));
-        return modelMapper.map(user, ManagementUserResponse.class);
-    }
-
-    /**
-     * <h1>Global Directory Provider</h1>
-     * 
-     * <p>Fetches all active (enabled) users in the system.</p>
-     *
-     * @return Iterable of ManagementUserResponse objects.
-     */
-    @Override
-    public Iterable<ManagementUserResponse> getAllUsers() {
-        return userRepository.findAll()
-                .stream()
-                .filter(User::isEnabled)
-                .map(u -> modelMapper.map(u, ManagementUserResponse.class))
-                .toList();
-    }
 }

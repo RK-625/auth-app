@@ -87,7 +87,6 @@ class AuthServiceImplTest {
         when(jwtService.getRefreshTtlSeconds()).thenReturn(3600L);
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(i -> i.getArgument(0));
         when(jwtService.generateRefreshToken(eq(user), anyString())).thenReturn("refresh-token");
-        when(modelMapper.map(user, AuthUserResponse.class)).thenReturn(new AuthUserResponse());
 
         // Action
         TokenResponse result = authService.loginRequest(authentication, response);
@@ -130,7 +129,6 @@ class AuthServiceImplTest {
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(i -> i.getArgument(0));
         when(jwtService.generateAccessToken(user)).thenReturn("new-access");
         when(jwtService.generateRefreshToken(eq(user), anyString())).thenReturn("new-refresh");
-        when(modelMapper.map(user, AuthUserResponse.class)).thenReturn(new AuthUserResponse());
 
         // Action
         TokenResponse result = authService.refreshTokenRequest(body, response, request);
@@ -251,12 +249,12 @@ void verifySignUpToken_WithValidAndUsedToken_ShouldProvisionUser() {
     SignUpObject signUpObject = new SignUpObject(email, otp, UUID.fromString(token), 300L);
     signUpObject.setUsed(true);
 
-    when(signUpObjectRepository.findByEmailAndOtpAndExpiresAtGreaterThanAndSignUpToken(
-            eq(email), eq(otp), any(Instant.class), eq(UUID.fromString(token))))
+    when(signUpObjectRepository.findByEmailAndExpiresAtGreaterThanAndSignUpToken(
+            eq(email), any(Instant.class), eq(UUID.fromString(token))))
             .thenReturn(Optional.of(signUpObject));
 
     // Action
-    authService.verifySignUpToken(email, otp, token, password);
+    authService.verifySignUpToken(email, token, password);
 
     // Assert
     verify(userHelper).buildAndSaveUser(email, password, null, Provider.LOCAL, UserRole.ROLE_USER);
@@ -272,13 +270,13 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         SignUpObject signUpObject = new SignUpObject(email, otp, UUID.fromString(token), 300L);
         signUpObject.setUsed(false); // NOT VERIFIED
 
-        when(signUpObjectRepository.findByEmailAndOtpAndExpiresAtGreaterThanAndSignUpToken(
-                eq(email), eq(otp), any(Instant.class), eq(UUID.fromString(token))))
+        when(signUpObjectRepository.findByEmailAndExpiresAtGreaterThanAndSignUpToken(
+                eq(email), any(Instant.class), eq(UUID.fromString(token))))
                 .thenReturn(Optional.of(signUpObject));
         when(messageHelper.getMessage("signup.validation.failure")).thenReturn("Validation failed");
 
         // Action & Assert
-        assertThatThrownBy(() -> authService.verifySignUpToken(email, otp, token, "pass"))
+        assertThatThrownBy(() -> authService.verifySignUpToken(email, token, "pass"))
                 .isInstanceOf(BadCredentialsException.class);
     }
 

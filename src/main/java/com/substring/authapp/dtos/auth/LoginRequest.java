@@ -41,7 +41,7 @@ public record LoginRequest(
         String email, 
         
         @NotBlank(message = "{auth.login.invalid_credentials}")
-        @Size(min = 6, max = 15, message = "{user.register.password_too_short}")
+        @Size(min = 6, max = 72, message = "{user.register.password_too_short}")
         String password
 ) implements Serializable {
 

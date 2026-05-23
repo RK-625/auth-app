@@ -2,6 +2,7 @@ package com.substring.authapp.helpers;
 
 import com.substring.authapp.repositories.RoleRepository;
 import com.substring.authapp.repositories.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -10,6 +11,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.util.Pair;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -37,6 +39,12 @@ class UserHelperTest {
 
     @InjectMocks
     private UserHelper userHelper;
+
+    @BeforeEach
+    void setUp() {
+        ReflectionTestUtils.setField(userHelper, "minPasswordLength", 6);
+        ReflectionTestUtils.setField(userHelper, "maxPasswordLength", 72);
+    }
 
     @Test
     @DisplayName("Should generate valid 6-digit OTP and UUID")

@@ -106,12 +106,14 @@ class OAuth2SuccessHandlerTest {
         // Mock DB behavior
         User existingUser = User.builder().email("existing@google.com").build();
         when(userRepository.findByEmail("existing@google.com")).thenReturn(Optional.of(existingUser));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // Action
         oAuth2SuccessHandler.onAuthenticationSuccess(request, response, authentication);
 
         // Assert
-        verify(userRepository, never()).save(any(User.class));
+        verify(userRepository).save(existingUser);
+        verifyNoInteractions(roleRepository);
         verify(authService).generateOAuth2AuthenticatedResponse(eq(existingUser), eq(response));
         verify(response).sendRedirect(anyString());
     }
@@ -136,6 +138,7 @@ class OAuth2SuccessHandlerTest {
         // Mock DB behavior
         User user = User.builder().email("private@github.com").build();
         when(userRepository.findByEmail("private@github.com")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // Action
         oAuth2SuccessHandler.onAuthenticationSuccess(request, response, authentication);

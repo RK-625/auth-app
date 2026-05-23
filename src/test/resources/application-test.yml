@@ -32,6 +32,9 @@ security:
     grace-period-ttl-seconds: 60
 
 app:
+  validation:
+    min-password-length: 6
+    max-password-length: 72
   security:
     root:
       email: root@test.com

@@ -60,6 +60,9 @@ public class UserHelper {
     @org.springframework.beans.factory.annotation.Value("${app.validation.min-password-length:6}")
     private int minPasswordLength;
 
+    @org.springframework.beans.factory.annotation.Value("${app.validation.max-password-length:72}")
+    private int maxPasswordLength;
+
     // ===================================================================================
     // SECTION 2: Validation Logic (Public)
     // ===================================================================================
@@ -116,7 +119,7 @@ public class UserHelper {
             throw new IllegalArgumentException(messageHelper.getMessage("user.register.email_required"));
         }
         
-        if (password == null || password.length() < 6) {
+        if (password == null || password.length() < minPasswordLength || password.length() > maxPasswordLength) {
              throw new IllegalArgumentException(messageHelper.getMessage("user.register.password_too_short"));
         }
 
