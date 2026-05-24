@@ -97,6 +97,10 @@ security:
       cookie-same-site: ${JWT_COOKIE_SAME_SITE}
       cookie-domain: ${JWT_COOKIE_DOMAIN}
 
+    lockout:
+      max-failed-attempts: 5
+      duration-minutes: 15
+
 # -----------------------------------------------------------------------------
 # Custom Application Security Properties
 # -----------------------------------------------------------------------------

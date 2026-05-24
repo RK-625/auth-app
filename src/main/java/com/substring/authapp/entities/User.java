@@ -107,6 +107,12 @@ public class User implements UserDetails {
     @Builder.Default
     private int tokenVersion = 0;
 
+    @Builder.Default
+    private int failedAttempts = 0;
+
+    @Column(name = "locked_until")
+    private Instant lockedUntil;
+
     // ===================================================================================
     // SECTION 2: Security & Relationships (Fields)
     // ===================================================================================
@@ -200,7 +206,7 @@ public class User implements UserDetails {
      */
     @Override
     public boolean isAccountNonExpired() {
-        return true;
+        return lockedUntil == null || Instant.now().isAfter(lockedUntil);
     }
 
     /**

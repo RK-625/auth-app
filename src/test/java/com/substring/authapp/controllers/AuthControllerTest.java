@@ -5,6 +5,7 @@ import com.substring.authapp.dtos.auth.LoginRequest;
 import com.substring.authapp.dtos.auth.SignUpInitiateRequest;
 import com.substring.authapp.exceptions.GlobalExceptionHandler;
 import com.substring.authapp.helpers.MessageHelper;
+import com.substring.authapp.repositories.UserRepository;
 import com.substring.authapp.services.AuthService;
 import io.micrometer.core.instrument.MeterRegistry;
 import com.substring.authapp.dtos.auth.TokenResponse;
@@ -47,9 +48,12 @@ class AuthControllerTest {
     @Mock
     private MeterRegistry meterRegistry;
 
+    @Mock
+    private UserRepository userRepository;
+
     @BeforeEach
     void setUp() {
-        AuthController authController = new AuthController(authService, authenticationManager, messageHelper, meterRegistry);
+        AuthController authController = new AuthController(authService, authenticationManager, messageHelper, meterRegistry, userRepository);
         mockMvc = MockMvcBuilders.standaloneSetup(authController)
                 .setControllerAdvice(new GlobalExceptionHandler(messageHelper))
                 .build();

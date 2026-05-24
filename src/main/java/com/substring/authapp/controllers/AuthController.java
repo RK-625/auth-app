@@ -1,6 +1,8 @@
 package com.substring.authapp.controllers;
 
 import com.substring.authapp.dtos.auth.*;
+import com.substring.authapp.entities.User;
+import com.substring.authapp.repositories.UserRepository;
 import com.substring.authapp.services.AuthService;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,9 +13,12 @@ import com.substring.authapp.helpers.MessageHelper;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.Map;
 
@@ -65,6 +70,7 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final MessageHelper messageHelper;
     private final MeterRegistry meterRegistry;
+    private final UserRepository userRepository;
 
     // ===================================================================================
     // SECTION 2: Core Authentication Handshakes
@@ -110,6 +116,17 @@ public class AuthController {
     private org.springframework.security.core.Authentication authenticate(LoginRequest loginRequest) {
         try {
             return authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(loginRequest.email(), loginRequest.password()));
+        } catch (BadCredentialsException e) {
+            authService.recordFailedLoginAttempt(loginRequest.email());
+            meterRegistry.counter("auth.login.failure").increment();
+            throw new BadCredentialsException(messageHelper.getMessage("auth.login.invalid_credentials"));
+        } catch (LockedException e) {
+            User user = userRepository.findByEmail(loginRequest.email()).orElse(null);
+            if (user != null && user.getLockedUntil() != null) {
+                long minutesLeft = Duration.between(Instant.now(), user.getLockedUntil()).toMinutes();
+                throw new BadCredentialsException(messageHelper.getMessage("auth.user.locked", Math.max(minutesLeft, 1)));
+            }
+            throw new BadCredentialsException(messageHelper.getMessage("auth.login.invalid_credentials"));
         } catch (Exception e) {
             meterRegistry.counter("auth.login.failure").increment();
             throw new BadCredentialsException(messageHelper.getMessage("auth.login.invalid_credentials"));

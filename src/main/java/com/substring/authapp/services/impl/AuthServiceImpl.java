@@ -30,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Optional;
@@ -106,6 +107,12 @@ public class AuthServiceImpl implements AuthService {
     @Value("${security.otp.grace-period-ttl-seconds:60}")
     private long gracePeriodTtl;
 
+    @Value("${security.lockout.max-failed-attempts:5}")
+    private int maxFailedAttempts;
+
+    @Value("${security.lockout.duration-minutes:30}")
+    private int lockoutDurationMinutes;
+
     // ===================================================================================
     // SECTION 2: Core Authentication Facade (The "Public API")
     // ===================================================================================
@@ -124,6 +131,13 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public TokenResponse loginRequest(Authentication authentication, HttpServletResponse response) {
         User user = (User) authentication.getPrincipal();
+
+        if (user.getFailedAttempts() > 0 || user.getLockedUntil() != null) {
+            user.setFailedAttempts(0);
+            user.setLockedUntil(null);
+            userRepository.save(user);
+        }
+
         String accessToken = jwtService.generateAccessToken(user);
 
         RefreshToken refreshTokenOb = createRefreshToken(user);
@@ -131,6 +145,42 @@ public class AuthServiceImpl implements AuthService {
 
         meterRegistry.counter("auth.login.success").increment();
         return generateAuthenticatedResponse(response, user, accessToken, refreshToken);
+    }
+
+    /**
+     * <h1>Failed Login Tracker</h1>
+     * 
+     * <p>Records a failed login attempt for a user identified by email. If the failure
+     * count reaches the configured threshold, the account is locked, all existing
+     * sessions are instantly invalidated, and further login attempts will be denied
+     * until the lockout duration expires.</p>
+     *
+     * <p><b>Anti-Enumeration Design:</b> This method silently does nothing if no user
+     * is found for the given email, preventing attackers from determining which
+     * emails are registered.</p>
+     *
+     * @param email The email address used in the failed attempt.
+     */
+    @Override
+    @Transactional
+    public void recordFailedLoginAttempt(String email) {
+        userRepository.findByEmail(email).ifPresent(user -> {
+            if (user.getLockedUntil() != null && Instant.now().isBefore(user.getLockedUntil())) {
+                Duration remaining = Duration.between(Instant.now(), user.getLockedUntil());
+                long remainingMinutes = Math.max(remaining.toMinutes(), 1);
+                long doubledMinutes = Math.min(remainingMinutes * 2, 24 * 60);
+                user.setLockedUntil(Instant.now().plus(Duration.ofMinutes(doubledMinutes)));
+                log.warn("Lock extended for user: {} — new expiry in {} minutes", user.getEmail(), doubledMinutes);
+                userRepository.save(user);
+                return;
+            }
+            user.setFailedAttempts(user.getFailedAttempts() + 1);
+            if (user.getFailedAttempts() >= maxFailedAttempts) {
+                user.setLockedUntil(Instant.now().plus(Duration.ofMinutes(lockoutDurationMinutes)));
+                log.warn("Account locked after {} failed attempts for user: {}", user.getFailedAttempts(), user.getEmail());
+            }
+            userRepository.save(user);
+        });
     }
 
     /**
@@ -425,6 +475,8 @@ public class AuthServiceImpl implements AuthService {
             // Update the password using the standard secure encoder
             user.setPassword(passwordEncoder.encode(newPassword));
             user.setTokenVersion(user.getTokenVersion() + 1);
+            user.setFailedAttempts(0);
+            user.setLockedUntil(null);
             refreshTokenRepository.revokeAllByUser(user);
             userRepository.save(user);
 

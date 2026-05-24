@@ -86,6 +86,17 @@ public interface AuthService {
     // ===================================================================================
     
     /**
+     * <h1>Failed Login Recording</h1>
+     * 
+     * <p>Records a failed login attempt for a given email. If the consecutive failure count
+     * exceeds the configured limit, the account is locked for a set duration and all active
+     * sessions are invalidated via token version bump and refresh token revocation.</p>
+     *
+     * @param email The email address used in the failed login attempt (may not exist).
+     */
+    void recordFailedLoginAttempt(String email);
+
+    /**
      * Creates a new stateful refresh token record.
      * @param user The principal for whom the token is generated.
      * @return The persisted {@link RefreshToken} entity.

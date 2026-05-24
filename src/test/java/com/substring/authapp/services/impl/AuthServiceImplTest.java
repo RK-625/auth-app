@@ -64,6 +64,8 @@ class AuthServiceImplTest {
     void setUp() {
         ReflectionTestUtils.setField(authService, "initialTtl", 300L);
         ReflectionTestUtils.setField(authService, "gracePeriodTtl", 60L);
+        ReflectionTestUtils.setField(authService, "maxFailedAttempts", 5);
+        ReflectionTestUtils.setField(authService, "lockoutDurationMinutes", 15);
         
         // Mock MeterRegistry behavior
         Counter mockCounter = mock(Counter.class);
@@ -445,6 +447,8 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         // Assert
         assertThat(user.getPassword()).isEqualTo("encodedPassword");
         assertThat(user.getTokenVersion()).isEqualTo(1);
+        assertThat(user.getFailedAttempts()).isEqualTo(0);
+        assertThat(user.getLockedUntil()).isNull();
         verify(refreshTokenRepository).revokeAllByUser(user);
         verify(userRepository).save(user);
         verify(resetPasswordObjectRepository).deleteAllByUser(user);
@@ -592,5 +596,113 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         // Assert
         verify(cookieService).clearRefreshCookie(response);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    // ===================================================================================
+    // STEP 6: Account Lockout Tests
+    // ===================================================================================
+
+    @Test
+    void loginRequest_ShouldResetFailedAttemptsOnSuccess() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        user.setFailedAttempts(3);
+        user.setLockedUntil(Instant.now().plusSeconds(600));
+
+        Authentication authentication = mock(Authentication.class);
+        when(authentication.getPrincipal()).thenReturn(user);
+        HttpServletResponse response = mock(HttpServletResponse.class);
+
+        when(jwtService.generateAccessToken(user)).thenReturn("access-token");
+        when(jwtService.getRefreshTtlSeconds()).thenReturn(3600L);
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(i -> i.getArgument(0));
+        when(jwtService.generateRefreshToken(eq(user), anyString())).thenReturn("refresh-token");
+
+        authService.loginRequest(authentication, response);
+
+        assertThat(user.getFailedAttempts()).isEqualTo(0);
+        assertThat(user.getLockedUntil()).isNull();
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void recordFailedLoginAttempt_ShouldIncrementCounter() {
+        String email = "test@example.com";
+        User user = new User();
+        user.setEmail(email);
+
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+
+        authService.recordFailedLoginAttempt(email);
+
+        assertThat(user.getFailedAttempts()).isEqualTo(1);
+        assertThat(user.getLockedUntil()).isNull();
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void recordFailedLoginAttempt_ShouldLockAccount_AtThreshold() {
+        String email = "test@example.com";
+        User user = new User();
+        user.setEmail(email);
+        user.setFailedAttempts(4);
+
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+
+        authService.recordFailedLoginAttempt(email);
+
+        assertThat(user.getFailedAttempts()).isEqualTo(5);
+        assertThat(user.getLockedUntil()).isNotNull();
+        assertThat(user.getLockedUntil()).isAfter(Instant.now());
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void recordFailedLoginAttempt_ShouldExtendLock_WhenAlreadyLocked() {
+        String email = "test@example.com";
+        Instant futureLock = Instant.now().plusSeconds(600); // 10 min from now
+        User user = new User();
+        user.setEmail(email);
+        user.setFailedAttempts(5);
+        user.setLockedUntil(futureLock);
+
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+
+        authService.recordFailedLoginAttempt(email);
+
+        // Lock should be extended: remaining ~10 min → doubled to ~20 min from now
+        assertThat(user.getFailedAttempts()).isEqualTo(5); // counter unchanged
+        assertThat(user.getLockedUntil()).isAfter(futureLock);
+        assertThat(user.getLockedUntil()).isBefore(Instant.now().plusSeconds(20 * 60 + 5));
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void recordFailedLoginAttempt_ShouldDoNothing_WhenUserNotFound() {
+        String email = "nonexistent@example.com";
+        when(userRepository.findByEmail(email)).thenReturn(Optional.empty());
+
+        authService.recordFailedLoginAttempt(email);
+
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void recordFailedLoginAttempt_ShouldUnlockAndCountAgain_WhenLockExpired() {
+        String email = "test@example.com";
+        Instant pastLock = Instant.now().minusSeconds(100); // expired lock
+        User user = new User();
+        user.setEmail(email);
+        user.setFailedAttempts(5);
+        user.setLockedUntil(pastLock);
+
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+
+        authService.recordFailedLoginAttempt(email);
+
+        // Lock has expired, so +1 to 6 (exceeds threshold again) → should re-lock
+        assertThat(user.getFailedAttempts()).isEqualTo(6);
+        assertThat(user.getLockedUntil()).isAfter(Instant.now());
+        verify(userRepository).save(user);
     }
 }
