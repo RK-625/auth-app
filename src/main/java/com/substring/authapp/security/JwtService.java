@@ -222,7 +222,7 @@ public class JwtService {
      * @param token The JWT string.
      * @return The User's UUID.
      */
-    public UUID getUseriD(String token) {
+    public UUID getUserId(String token) {
         return UUID.fromString(parse(token).getPayload().getSubject());
     }
 
