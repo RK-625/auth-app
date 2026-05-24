@@ -132,7 +132,8 @@ public class JwtService {
                 .claims(Map.of(
                         "email", user.getEmail(),
                         "roles", roles,
-                        "typ", "access" // Custom claim to distinguish token type
+                        "typ", "access",
+                        "version", user.getTokenVersion()
                 ))
                 .signWith(key, SignatureAlgorithm.HS512)
                 .compact();

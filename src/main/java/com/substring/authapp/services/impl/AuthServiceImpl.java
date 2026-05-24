@@ -424,6 +424,8 @@ public class AuthServiceImpl implements AuthService {
         if (valid) {
             // Update the password using the standard secure encoder
             user.setPassword(passwordEncoder.encode(newPassword));
+            user.setTokenVersion(user.getTokenVersion() + 1);
+            refreshTokenRepository.revokeAllByUser(user);
             userRepository.save(user);
 
             // Clean up: delete the reset object immediately after use

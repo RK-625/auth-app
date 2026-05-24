@@ -46,6 +46,7 @@ class JwtServiceTest {
         assertThat(claims.getPayload().getSubject()).isEqualTo(user.getId().toString());
         assertThat(claims.getPayload().get("email")).isEqualTo(user.getEmail());
         assertThat(claims.getPayload().get("typ")).isEqualTo("access");
+        assertThat(claims.getPayload().get("version", Integer.class)).isEqualTo(0);
     }
 
     @Test

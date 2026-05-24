@@ -66,6 +66,7 @@ class JwtAuthenticationFilterTest {
 
         Claims claims = mock(Claims.class);
         when(claims.getSubject()).thenReturn(userId.toString());
+        when(claims.get("version", Integer.class)).thenReturn(0);
         
         @SuppressWarnings("unchecked")
         Jws<Claims> jws = mock(Jws.class);
@@ -119,6 +120,7 @@ class JwtAuthenticationFilterTest {
 
         Claims claims = mock(Claims.class);
         when(claims.getSubject()).thenReturn(userId.toString());
+        when(claims.get("version", Integer.class)).thenReturn(0);
         @SuppressWarnings("unchecked")
         Jws<Claims> jws = mock(Jws.class);
         when(jws.getPayload()).thenReturn(claims);

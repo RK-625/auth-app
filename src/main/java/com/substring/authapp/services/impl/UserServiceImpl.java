@@ -11,6 +11,7 @@ import com.substring.authapp.entities.UserRole;
 import com.substring.authapp.exceptions.ResourceNotFoundException;
 import com.substring.authapp.helpers.UserHelper;
 import com.substring.authapp.repositories.RoleRepository;
+import com.substring.authapp.repositories.RefreshTokenRepository;
 import com.substring.authapp.repositories.UserRepository;
 import com.substring.authapp.services.UserService;
 import com.substring.authapp.dtos.user.PasswordChangeRequest;
@@ -80,6 +81,7 @@ public class UserServiceImpl implements UserService {
     private final MessageHelper messageHelper;
     private final UserHelper userHelper;
     private final RoleRepository roleRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
 
     // ===================================================================================
     // SECTION 2: Administrative User Creation
@@ -192,6 +194,8 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException(messageHelper.getMessage("user.profile.not_found")));
         user.setEnabled(false);
+        user.setTokenVersion(user.getTokenVersion() + 1);
+        refreshTokenRepository.revokeAllByUser(user);
     }
 
     /**
@@ -212,6 +216,8 @@ public class UserServiceImpl implements UserService {
         userHelper.validateUserForSignup(user.getEmail(), request.getNewPassword());
 
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setTokenVersion(user.getTokenVersion() + 1);
+        refreshTokenRepository.revokeAllByUser(user);
         userRepository.save(user);
     }
 

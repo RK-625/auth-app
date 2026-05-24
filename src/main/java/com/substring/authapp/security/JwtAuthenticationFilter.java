@@ -128,7 +128,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 // PHASE 3: Identity Resolution & Security Context Population
                 userRepository.findById(userUUID).ifPresent(user -> {
-                    if (user.isEnabled()) {
+                    Integer tokenVersion = payload.get("version", Integer.class);
+                    if (user.isEnabled() && tokenVersion != null && tokenVersion == user.getTokenVersion()) {
                         List<GrantedAuthority> authorities = user.getRoles() == null ? List.of() : 
                             user.getRoles().stream()
                                 .map(role -> new SimpleGrantedAuthority(role.getName().toString()))

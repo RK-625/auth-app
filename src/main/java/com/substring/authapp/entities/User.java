@@ -104,6 +104,9 @@ public class User implements UserDetails {
     @Builder.Default
     private boolean enabled = true;
 
+    @Builder.Default
+    private int tokenVersion = 0;
+
     // ===================================================================================
     // SECTION 2: Security & Relationships (Fields)
     // ===================================================================================

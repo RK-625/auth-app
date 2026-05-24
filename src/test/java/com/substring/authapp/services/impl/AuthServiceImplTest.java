@@ -444,6 +444,8 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
 
         // Assert
         assertThat(user.getPassword()).isEqualTo("encodedPassword");
+        assertThat(user.getTokenVersion()).isEqualTo(1);
+        verify(refreshTokenRepository).revokeAllByUser(user);
         verify(userRepository).save(user);
         verify(resetPasswordObjectRepository).deleteAllByUser(user);
     }
