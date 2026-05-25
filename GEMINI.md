@@ -28,7 +28,7 @@ Registration and password recovery utilize a structured handshake process:
 
 ### Cryptography & JWT
 - **Algorithm:** HMAC SHA-512 (HS512) for all token signing.
-- **Dual-Token Profiles:** Access tokens are claim-heavy; Refresh tokens are claim-light (JTI-only) to minimize exposure if intercepted.
+- **Dual-Token Profiles:** Access tokens are claim-heavy; Refresh tokens are claim-light (containing only the unique JTI and a "version" claim to track security/credential version alignment) to minimize exposure if intercepted.
 
 ### Rate Limiting (DDoS Protection)
 - **Engine:** Bucket4j.

@@ -347,12 +347,13 @@ public class AuthController {
     private String formatLockoutDuration(long totalMinutes) {
         long hours = totalMinutes / 60;
         long minutes = totalMinutes % 60;
-        if (hours == 0) {
-            return minutes + " minute(s)";
-        }
-        if (minutes == 0) {
-            return hours + " hour(s)";
-        }
-        return hours + " hour(s), " + minutes + " minute(s)";
+        
+        String hrStr = hours == 1 ? "1 hour" : hours + " hours";
+        String minStr = minutes == 1 ? "1 minute" : minutes + " minutes";
+        
+        if (hours == 0) return minStr;
+        if (minutes == 0) return hrStr;
+        
+        return hrStr + ", " + minStr;
     }
 }
