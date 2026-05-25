@@ -9,7 +9,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
+import java.util.HexFormat;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
@@ -89,7 +89,7 @@ public class JwtService {
             @Value("${security.jwt.refresh-ttl-seconds}") long refreshTtlSeconds,
             @Value("${security.jwt.issuer}") String issuer) {
         
-        this.key = Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
+        this.key = Keys.hmacShaKeyFor(HexFormat.of().parseHex(secretKey));
         this.accessTtlSeconds = accessTtlSeconds;
         this.refreshTtlSeconds = refreshTtlSeconds;
         this.issuer = issuer;
@@ -135,7 +135,7 @@ public class JwtService {
                         "typ", "access",
                         "version", user.getTokenVersion()
                 ))
-                .signWith(key, SignatureAlgorithm.HS512)
+                .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
     }
 
@@ -168,7 +168,7 @@ public class JwtService {
                 .expiration(Date.from(now.plusSeconds(refreshTtlSeconds))) // Longer expiration (e.g., 7-30 days)
                 .claim("version", user.getTokenVersion())
                 .claim("typ", "refresh") // Custom claim to ensure this cannot be used as an access token
-                .signWith(key, SignatureAlgorithm.HS512)
+                .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
     }
 
