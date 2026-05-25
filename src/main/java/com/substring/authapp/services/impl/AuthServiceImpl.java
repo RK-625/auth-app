@@ -129,6 +129,7 @@ public class AuthServiceImpl implements AuthService {
      * @return A complete {@link TokenResponse}.
      */
     @Override
+    @Transactional
     public TokenResponse loginRequest(Authentication authentication, HttpServletResponse response) {
         User user = (User) authentication.getPrincipal();
 
@@ -196,6 +197,7 @@ public class AuthServiceImpl implements AuthService {
      * @return A fresh {@link TokenResponse}.
      */
     @Override
+    @Transactional
     public TokenResponse refreshTokenRequest(RefreshTokenRequest body, HttpServletResponse response, HttpServletRequest request) {
         String tokenStr = extractRefreshToken(body, request);
         RefreshToken refreshTokenOb = getValidatedRefreshToken(tokenStr);
@@ -505,7 +507,6 @@ public class AuthServiceImpl implements AuthService {
      * @return The persisted {@link RefreshToken} entity.
      */
     @Override
-    @Transactional
     public RefreshToken createRefreshToken(User user) {
         String refreshTokenJti = UUID.randomUUID().toString();
         return refreshTokenRepository.save(RefreshToken.create(user, refreshTokenJti, jwtService.getRefreshTtlSeconds()));
@@ -526,7 +527,6 @@ public class AuthServiceImpl implements AuthService {
      * @return A new, unrevoked {@link RefreshToken} entity.
      */
     @Override
-    @Transactional
     public RefreshToken rotateRefreshToken(RefreshToken oldToken) {
         // 1. Invalidate the old token permanently
         oldToken.setRevoked(true);
@@ -697,6 +697,7 @@ public class AuthServiceImpl implements AuthService {
      * @return The generated Access Token string.
      */
     @Override
+    @Transactional
     public String generateOAuth2AuthenticatedResponse(User user, HttpServletResponse response) {
         RefreshToken refreshTokenOb = createRefreshToken(user);
 
