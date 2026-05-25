@@ -35,6 +35,8 @@ spring:
 
 server:
   port: 8082
+  tomcat:
+    max-http-form-post-size: 2MB
 
 # -----------------------------------------------------------------------------
 # RUNTIME OPTIMIZATIONS (JAVA 21+)
