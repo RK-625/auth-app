@@ -282,9 +282,10 @@ public class UserHelper {
      *
      * @return A {@link Pair} containing the OTP string and a {@link UUID} token.
      */
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
     public static Pair<String, UUID> generateSecureOtpAndToken() {
-         SecureRandom secureRandom = new SecureRandom();
-         int otp = 100000 + secureRandom.nextInt(900000);
+         int otp = 100000 + SECURE_RANDOM.nextInt(900000);
          UUID resetToken = UUID.randomUUID();
          return Pair.of(String.valueOf(otp), resetToken);
     }
