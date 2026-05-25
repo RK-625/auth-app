@@ -112,6 +112,11 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
+                .headers(headers -> headers
+                        .frameOptions(frameOptions -> frameOptions.deny())
+                        .contentTypeOptions(Customizer.withDefaults())
+                        .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'"))
+                )
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(
