@@ -115,16 +115,12 @@ public class UserHelper {
      * @throws IllegalArgumentException If email is missing, password is too short, or email already exists.
      */
     public void validateUserForSignup(String email, String password) {
-        if (email == null || email.isBlank()) {
-            throw new IllegalArgumentException(messageHelper.getMessage("user.register.email_required"));
+        if (email == null || email.isBlank() || userRepository.existsByEmail(email)) {
+            throw new IllegalArgumentException(messageHelper.getMessage("user.register.not_available"));
         }
         
         if (password == null || password.length() < minPasswordLength || password.length() > maxPasswordLength) {
              throw new IllegalArgumentException(messageHelper.getMessage("user.register.password_too_short"));
-        }
-
-        if (userRepository.existsByEmail(email)) {
-            throw new IllegalArgumentException(messageHelper.getMessage("user.register.email_exists"));
         }
     }
 
@@ -144,11 +140,8 @@ public class UserHelper {
      * @throws IllegalArgumentException If the email is blank or already exists.
      */
     public void validateSignUpEmail(String email) {
-        if (email == null || email.isBlank()) {
-            throw new IllegalArgumentException(messageHelper.getMessage("user.register.email_required"));
-        }
-        if (userRepository.existsByEmail(email)) {
-            throw new IllegalArgumentException(messageHelper.getMessage("user.register.email_exists"));
+        if (email == null || email.isBlank() || userRepository.existsByEmail(email)) {
+            throw new IllegalArgumentException(messageHelper.getMessage("user.register.not_available"));
         }
     }
 

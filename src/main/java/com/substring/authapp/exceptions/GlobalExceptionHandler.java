@@ -150,7 +150,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiError> handleDataIntegrityViolationException(DataIntegrityViolationException e, HttpServletRequest request) {
         logger.error("Database integrity violation: {}", e.getMessage());
-        String message = messageHelper.getMessage("user.register.email_exists");
+        String message = messageHelper.getMessage("user.register.not_available");
         ApiError apiError = ApiError.of(HttpStatus.CONFLICT.value(), "Conflict", message, request.getRequestURI());
         return ResponseEntity.status(HttpStatus.CONFLICT).body(apiError);
     }

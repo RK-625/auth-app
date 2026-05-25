@@ -93,7 +93,7 @@ class UserHelperTest {
         String password = "password123";
 
         when(userRepository.existsByEmail(email)).thenReturn(true);
-        when(messageHelper.getMessage("user.register.email_exists")).thenReturn("Email exists");
+        when(messageHelper.getMessage("user.register.not_available")).thenReturn("Registration not available");
 
         assertThatThrownBy(() -> userHelper.validateUserForSignup(email, password))
                 .isInstanceOf(IllegalArgumentException.class);
