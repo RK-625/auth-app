@@ -380,7 +380,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         User user = new User();
         user.setEmail(email);
 
-        when(userHelper.validateAndGetUserForAuth(email)).thenReturn(user);
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
         when(resetPasswordObjectRepository.findByUserAndExpiresAtGreaterThan(eq(user), any(Instant.class)))
                 .thenReturn(Optional.empty());
         when(userHelper.generateUniqueHandshakeKeys(any())).thenReturn(Pair.of("123456", UUID.randomUUID()));
@@ -401,6 +401,20 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
             captor.getValue().afterCommit();
             verify(emailService).sendPassWordResetOtp(eq(email), eq("123456"));
         }
+    }
+
+    @Test
+    void initiatePasswordReset_WithNonExistentEmail_ShouldSilentlyReturn() {
+        // Setup
+        String email = "nonexistent@example.com";
+        when(userRepository.findByEmail(email)).thenReturn(Optional.empty());
+
+        // Action
+        authService.initiatePasswordReset(email);
+
+        // Assert
+        verifyNoInteractions(resetPasswordObjectRepository);
+        verifyNoInteractions(emailService);
     }
 
     @Test

@@ -378,7 +378,11 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void initiatePasswordReset(String email) {
-        User user = userHelper.validateAndGetUserForAuth(email);
+        Optional<User> userOpt = userRepository.findByEmail(email);
+        if (userOpt.isEmpty()) {
+            return; // Silently return to prevent user enumeration
+        }
+        User user = userOpt.get();
         Optional<ResetPasswordObject> activeOtp = resetPasswordObjectRepository.findByUserAndExpiresAtGreaterThan(user, Instant.now());
 
         if (activeOtp.isPresent()) {

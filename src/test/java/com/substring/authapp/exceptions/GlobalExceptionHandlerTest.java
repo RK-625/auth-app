@@ -101,7 +101,7 @@ class GlobalExceptionHandlerTest {
         mockMvc.perform(get("/test/data-integrity")
                 .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("Email already exists"));
+                .andExpect(jsonPath("$.message").value("Registration not available"));
     }
 
     @Test
