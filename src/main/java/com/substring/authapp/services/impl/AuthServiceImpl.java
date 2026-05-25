@@ -505,6 +505,7 @@ public class AuthServiceImpl implements AuthService {
      * @return The persisted {@link RefreshToken} entity.
      */
     @Override
+    @Transactional
     public RefreshToken createRefreshToken(User user) {
         String refreshTokenJti = UUID.randomUUID().toString();
         return refreshTokenRepository.save(RefreshToken.create(user, refreshTokenJti, jwtService.getRefreshTtlSeconds()));
@@ -525,6 +526,7 @@ public class AuthServiceImpl implements AuthService {
      * @return A new, unrevoked {@link RefreshToken} entity.
      */
     @Override
+    @Transactional
     public RefreshToken rotateRefreshToken(RefreshToken oldToken) {
         // 1. Invalidate the old token permanently
         oldToken.setRevoked(true);
