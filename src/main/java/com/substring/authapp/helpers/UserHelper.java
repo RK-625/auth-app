@@ -118,7 +118,18 @@ public class UserHelper {
         if (email == null || email.isBlank() || userRepository.existsByEmail(email)) {
             throw new IllegalArgumentException(messageHelper.getMessage("user.register.not_available"));
         }
-        
+        validatePasswordComplexity(password);
+    }
+
+    /**
+     * <h1>Password Complexity Gatekeeper</h1>
+     * 
+     * <p>Enforces strict business rules on passwords.</p>
+     * 
+     * @param password The candidate password.
+     * @throws IllegalArgumentException If password is too short or too long.
+     */
+    public void validatePasswordComplexity(String password) {
         if (password == null || password.length() < minPasswordLength || password.length() > maxPasswordLength) {
              throw new IllegalArgumentException(messageHelper.getMessage("user.register.password_too_short"));
         }

@@ -441,7 +441,8 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public String verifyPasswordResetOtp(String email, String otp) {
-        User user = userHelper.validateAndGetUserForAuth(email);
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new BadCredentialsException(messageHelper.getMessage("auth.forget.otp_invalid")));
 
         ResetPasswordObject resetPasswordObject = resetPasswordObjectRepository
                 .findByUserAndOtpAndUsedFalseAndExpiresAtGreaterThanEqual(user, otp, Instant.now())
@@ -469,8 +470,9 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void resetPassword(String email, String otp, String resetToken, String newPassword) {
-        User user = userHelper.validateAndGetUserForAuth(email);
-        userHelper.validateUserForSignup(email, newPassword);
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new BadCredentialsException(messageHelper.getMessage("auth.forget.otp_invalid")));
+        userHelper.validatePasswordComplexity(newPassword);
 
         // Final security check: verify that this specific OTP/Token combo was verified and hasn't expired
         boolean valid = resetPasswordObjectRepository

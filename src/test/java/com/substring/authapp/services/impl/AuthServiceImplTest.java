@@ -427,7 +427,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         ResetPasswordObject resetObject = new ResetPasswordObject(user, otp, resetToken, 300L);
         resetObject.setUsed(false);
 
-        when(userHelper.validateAndGetUserForAuth(email)).thenReturn(user);
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
         when(resetPasswordObjectRepository.findByUserAndOtpAndUsedFalseAndExpiresAtGreaterThanEqual(eq(user), eq(otp), any(Instant.class)))
                 .thenReturn(Optional.of(resetObject));
 
@@ -451,7 +451,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         User user = new User();
         user.setEmail(email);
 
-        when(userHelper.validateAndGetUserForAuth(email)).thenReturn(user);
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
         when(resetPasswordObjectRepository.findByUserAndExpiresAtGreaterThanAndUsedTrueAndOtpAndResetToken(
                 eq(user), any(Instant.class), eq(otp), eq(UUID.fromString(resetToken))))
                 .thenReturn(Optional.of(new ResetPasswordObject()));
@@ -478,7 +478,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         String resetToken = UUID.randomUUID().toString();
         
         User user = new User();
-        when(userHelper.validateAndGetUserForAuth(email)).thenReturn(user);
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
         when(resetPasswordObjectRepository.findByUserAndExpiresAtGreaterThanAndUsedTrueAndOtpAndResetToken(
                 eq(user), any(Instant.class), eq(otp), eq(UUID.fromString(resetToken))))
                 .thenReturn(Optional.empty());
