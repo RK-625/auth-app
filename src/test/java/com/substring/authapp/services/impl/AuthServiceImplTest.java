@@ -500,14 +500,15 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         compromisedToken.setRevoked(true); // Token is already revoked (stolen)
 
         when(refreshTokenRepository.findByJti(jti)).thenReturn(Optional.of(compromisedToken));
-        when(messageHelper.getMessage(anyString())).thenReturn("Error message");
+        when(messageHelper.getMessage("token.refresh.revoked")).thenReturn("Revoked");
 
         // Action & Assert
         assertThatThrownBy(() -> authService.getValidatedRefreshToken(tokenStr))
-                .isInstanceOf(BadCredentialsException.class);
-        
-        // Verify the Kill-Switch was triggered
-        verify(refreshTokenRepository).revokeAllByUser(user);
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessage("Revoked");
+
+        // Verify no collateral damage — revokeAllByUser is NEVER called
+        verify(refreshTokenRepository, never()).revokeAllByUser(any());
     }
 
     @Test

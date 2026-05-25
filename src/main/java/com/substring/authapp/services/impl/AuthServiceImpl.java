@@ -577,11 +577,8 @@ public class AuthServiceImpl implements AuthService {
 
         // 2. Critical security checks
         if (refreshTokenOb.isRevoked()) {
-            // DETECTED COMPROMISE: "Token Family Revocation" (The Kill Switch)
-            // If a revoked token is reused, we assume the whole session family is stolen.
-            log.warn("DETECTED COMPROMISE: Revoked token reuse attempt for user: {}. Triggering Kill-Switch.", userId);
-            refreshTokenRepository.revokeAllByUser(refreshTokenOb.getUser());
-            throw new BadCredentialsException(messageHelper.getMessage("token.refresh.compromised"));
+            log.warn("Revoked token reuse attempt for user: {}. Token: {}", userId, jti);
+            throw new BadCredentialsException(messageHelper.getMessage("token.refresh.revoked"));
         }
         
         if (refreshTokenOb.getExpiresAt().isBefore(Instant.now())) throw new BadCredentialsException(messageHelper.getMessage("token.refresh.expired"));
