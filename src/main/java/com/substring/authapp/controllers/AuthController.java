@@ -124,7 +124,8 @@ public class AuthController {
             User user = userRepository.findByEmail(loginRequest.email()).orElse(null);
             if (user != null && user.getLockedUntil() != null) {
                 long minutesLeft = Duration.between(Instant.now(), user.getLockedUntil()).toMinutes();
-                throw new BadCredentialsException(messageHelper.getMessage("auth.user.locked", Math.max(minutesLeft, 1)));
+                String formattedDuration = formatLockoutDuration(Math.max(minutesLeft, 1));
+                throw new BadCredentialsException(messageHelper.getMessage("auth.user.locked", formattedDuration));
             }
             throw new BadCredentialsException(messageHelper.getMessage("auth.login.invalid_credentials"));
         } catch (Exception e) {
@@ -341,5 +342,17 @@ public class AuthController {
     public ResponseEntity<Void> forgetPasswordThird(@Valid @RequestBody PasswordResetCompleteRequest request) {
         authService.resetPassword(request.getEmail(), request.getOtp(), request.getResetToken(), request.getPassword());
         return ResponseEntity.ok().build();
+    }
+
+    private String formatLockoutDuration(long totalMinutes) {
+        long hours = totalMinutes / 60;
+        long minutes = totalMinutes % 60;
+        if (hours == 0) {
+            return minutes + " minute(s)";
+        }
+        if (minutes == 0) {
+            return hours + " hour(s)";
+        }
+        return hours + " hour(s), " + minutes + " minute(s)";
     }
 }
