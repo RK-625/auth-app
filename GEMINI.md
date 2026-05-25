@@ -24,6 +24,9 @@ Registration and password recovery utilize a structured handshake process:
 - **JIT Provisioning:** OAuth2 users (GitHub) are provisioned "Just-In-Time" upon successful first-time social login via `OAuth2SuccessHandler`.
 - **Deferred Provisioning:** Uses staging tables (`SignUpObject`, `ResetPasswordObject`) to hold transient state during handshakes, ensuring the primary `User` table remains free of unverified or "half-created" accounts.
 
+### OAuth2 Credential Transition
+- **Redirection Safety:** To prevent leaking JWT access tokens in browser history and address bars, successful OAuth2 logins do not append tokens to the redirect URL query parameters. Instead, the handler sets a secure HttpOnly `refresh_token` cookie and a non-HttpOnly `logged_in=true` cookie hint, then redirects directly to the frontend application. The frontend then automatically issues a silent POST `/auth/refresh` handshake to retrieve the in-memory access token.
+
 ## 3. Security & Safety
 
 ### Cryptography & JWT

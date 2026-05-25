@@ -143,10 +143,10 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
         });
 
         // 3. Convert OAuth2 session into stateless JWT and stateful refresh token
-        String accessToken = authService.generateOAuth2AuthenticatedResponse(user, response);
+        authService.generateOAuth2AuthenticatedResponse(user, response);
 
-        // 4. Redirect back to frontend with the Access Token
-        String targetUrl = frontendRedirectUrl + "?token=" + accessToken;
+        // 4. Redirect back to frontend (frontend will exchange cookies for access token silently via /auth/refresh)
+        String targetUrl = frontendRedirectUrl;
         logger.info("OAuth2 flow complete. Redirecting {} to: {}", PrivacyHelper.maskEmail(email), frontendRedirectUrl);
         response.sendRedirect(targetUrl);
     }

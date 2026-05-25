@@ -53,6 +53,7 @@ Default local API port is `8083` in dev profile.
 - Never commit secrets. Use environment variables for DB, JWT, OAuth, and mail credentials.
 - Validate all auth DTOs with `@Valid`.
 - Preserve refresh-token cookie security flags and error response shape (`ApiError`) when modifying auth flows.
+- **OAuth2 Token Security:** Never append JWT access tokens as query parameters during OAuth2 redirect callback. Rely on the double-cookie strategy (secure HttpOnly `refresh_token` and `logged_in` frontend hint) to transition credentials.
 
 ## Agent Maintenance Rule
 - Treat this file as a living reference and update it proactively after meaningful changes.
