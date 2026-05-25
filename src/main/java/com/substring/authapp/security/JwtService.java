@@ -166,6 +166,7 @@ public class JwtService {
                 .issuer(issuer)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusSeconds(refreshTtlSeconds))) // Longer expiration (e.g., 7-30 days)
+                .claim("version", user.getTokenVersion())
                 .claim("typ", "refresh") // Custom claim to ensure this cannot be used as an access token
                 .signWith(key, SignatureAlgorithm.HS512)
                 .compact();

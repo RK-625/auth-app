@@ -120,6 +120,7 @@ class AuthServiceImplTest {
         when(claims.getId()).thenReturn("jti-123");
         UUID userId = UUID.randomUUID();
         when(claims.getSubject()).thenReturn(userId.toString());
+        when(claims.get("version", Integer.class)).thenReturn(0);
 
         User user = new User();
         user.setId(userId);
@@ -328,6 +329,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         
         UUID userId = UUID.randomUUID();
         lenient().when(claims.getSubject()).thenReturn(userId.toString());
+        lenient().when(claims.get("version", Integer.class)).thenReturn(0);
         
         User user = new User();
         user.setId(userId);
@@ -575,6 +577,33 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         assertThatThrownBy(() -> authService.getValidatedRefreshToken(tokenStr))
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessage("Mismatch");
+    }
+
+    @Test
+    void getValidatedRefreshToken_WhenVersionMismatch_ShouldThrowException() {
+        String tokenStr = "old-version-jwt";
+        String jti = "jti-123";
+        UUID userId = UUID.randomUUID();
+
+        io.jsonwebtoken.Claims claims = mock(io.jsonwebtoken.Claims.class);
+        io.jsonwebtoken.Jws jws = mock(io.jsonwebtoken.Jws.class);
+        when(jwtService.parse(tokenStr)).thenReturn(jws);
+        when(jws.getPayload()).thenReturn(claims);
+        when(claims.getId()).thenReturn(jti);
+        when(claims.getSubject()).thenReturn(userId.toString());
+        when(claims.get("version", Integer.class)).thenReturn(1); // JWT has version 1
+
+        User user = new User();
+        user.setId(userId);
+        user.setTokenVersion(2); // DB has version 2 (credential changed)
+        RefreshToken tokenOb = RefreshToken.create(user, jti, 3600L);
+
+        when(refreshTokenRepository.findByJti(jti)).thenReturn(Optional.of(tokenOb));
+        when(messageHelper.getMessage("token.refresh.version_mismatch")).thenReturn("Version mismatch");
+
+        assertThatThrownBy(() -> authService.getValidatedRefreshToken(tokenStr))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessage("Version mismatch");
     }
 
     @Test

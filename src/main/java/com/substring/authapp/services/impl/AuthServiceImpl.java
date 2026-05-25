@@ -584,6 +584,13 @@ public class AuthServiceImpl implements AuthService {
         // 3. Ownership check: ensure the token belongs to the user specified in the JWT payload
         if (!refreshTokenOb.getUser().getId().equals(userId)) throw new BadCredentialsException(messageHelper.getMessage("token.refresh.user_mismatch"));
 
+        // 4. Token version check: reject tokens issued before credential changes
+        int tokenVersion = claims.get("version", Integer.class);
+        if (tokenVersion != refreshTokenOb.getUser().getTokenVersion()) {
+            log.warn("Refresh token version mismatch for user: {}. JWT version: {}, DB version: {}.", userId, tokenVersion, refreshTokenOb.getUser().getTokenVersion());
+            throw new BadCredentialsException(messageHelper.getMessage("token.refresh.version_mismatch"));
+        }
+
         return refreshTokenOb;
     }
 
