@@ -565,6 +565,9 @@ public class AuthServiceImpl implements AuthService {
     public RefreshToken getValidatedRefreshToken(String refreshTokenStr) {
         // Parse once to extract claims
         io.jsonwebtoken.Claims claims = jwtService.parse(refreshTokenStr).getPayload();
+        if (!"refresh".equals(claims.get("typ"))) {
+            throw new BadCredentialsException(messageHelper.getMessage("token.refresh.invalid"));
+        }
         String jti = claims.getId();
         UUID userId = UUID.fromString(claims.getSubject());
 
@@ -607,13 +610,8 @@ public class AuthServiceImpl implements AuthService {
      * (Cookies first, fallback to JSON body).</p>
      */
     private String extractRefreshToken(RefreshTokenRequest body, HttpServletRequest request) {
-        String refreshToken = readRefreshTokenRequest(body, request)
+        return readRefreshTokenRequest(body, request)
                 .orElseThrow(() -> new BadCredentialsException(messageHelper.getMessage("token.refresh.not_present")));
-
-        if (!jwtService.isRefreshToken(refreshToken)) {
-            throw new BadCredentialsException(messageHelper.getMessage("token.refresh.invalid"));
-        }
-        return refreshToken;
     }
 
     /**

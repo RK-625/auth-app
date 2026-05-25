@@ -110,7 +110,6 @@ class AuthServiceImplTest {
         // Mock extraction
         lenient().when(cookieService.getRefreshTokenCookieName()).thenReturn("refreshToken");
         when(request.getCookies()).thenReturn(null);
-        when(jwtService.isRefreshToken(oldTokenStr)).thenReturn(true);
 
         // Mock validation
         io.jsonwebtoken.Claims claims = mock(io.jsonwebtoken.Claims.class);
@@ -120,6 +119,7 @@ class AuthServiceImplTest {
         when(claims.getId()).thenReturn("jti-123");
         UUID userId = UUID.randomUUID();
         when(claims.getSubject()).thenReturn(userId.toString());
+        lenient().when(claims.get("typ")).thenReturn("refresh");
         when(claims.get("version", Integer.class)).thenReturn(0);
 
         User user = new User();
@@ -318,7 +318,6 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         // Mock token extraction
         lenient().when(cookieService.getRefreshTokenCookieName()).thenReturn("refreshToken");
         when(request.getCookies()).thenReturn(null); // Force body extraction
-        when(jwtService.isRefreshToken(tokenStr)).thenReturn(true);
         
         // Mock getValidatedRefreshToken
         io.jsonwebtoken.Claims claims = mock(io.jsonwebtoken.Claims.class);
@@ -329,6 +328,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         
         UUID userId = UUID.randomUUID();
         lenient().when(claims.getSubject()).thenReturn(userId.toString());
+        lenient().when(claims.get("typ")).thenReturn("refresh");
         lenient().when(claims.get("version", Integer.class)).thenReturn(0);
         
         User user = new User();
@@ -494,6 +494,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         lenient().when(jws.getPayload()).thenReturn(claims);
         lenient().when(claims.getId()).thenReturn(jti);
         lenient().when(claims.getSubject()).thenReturn(userId.toString());
+        lenient().when(claims.get("typ")).thenReturn("refresh");
 
         RefreshToken compromisedToken = RefreshToken.create(user, jti, 3600L);
         compromisedToken.setRevoked(true); // Token is already revoked (stolen)
@@ -523,6 +524,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         when(jws.getPayload()).thenReturn(claims);
         when(claims.getId()).thenReturn(jti);
         when(claims.getSubject()).thenReturn(userId.toString());
+        lenient().when(claims.get("typ")).thenReturn("refresh");
 
         RefreshToken expiredToken = RefreshToken.create(user, jti, -100L); // EXPIRED
         when(refreshTokenRepository.findByJti(jti)).thenReturn(Optional.of(expiredToken));
@@ -544,6 +546,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         when(jws.getPayload()).thenReturn(claims);
         when(claims.getId()).thenReturn(jti);
         when(claims.getSubject()).thenReturn(UUID.randomUUID().toString());
+        lenient().when(claims.get("typ")).thenReturn("refresh");
 
         when(refreshTokenRepository.findByJti(jti)).thenReturn(Optional.empty());
         when(messageHelper.getMessage("token.refresh.not_found_db")).thenReturn("Not found");
@@ -566,6 +569,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         when(jws.getPayload()).thenReturn(claims);
         when(claims.getId()).thenReturn(jti);
         when(claims.getSubject()).thenReturn(tokenUserId.toString());
+        lenient().when(claims.get("typ")).thenReturn("refresh");
 
         User actualUser = new User();
         actualUser.setId(actualUserId);
@@ -591,6 +595,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         when(jws.getPayload()).thenReturn(claims);
         when(claims.getId()).thenReturn(jti);
         when(claims.getSubject()).thenReturn(userId.toString());
+        lenient().when(claims.get("typ")).thenReturn("refresh");
         when(claims.get("version", Integer.class)).thenReturn(1); // JWT has version 1
 
         User user = new User();
@@ -613,11 +618,10 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         HttpServletResponse response = mock(HttpServletResponse.class);
         RefreshTokenRequest body = new RefreshTokenRequest("invalid-token");
 
-        // Mock extractRefreshToken to throw exception
+        // Mock getValidatedRefreshToken to throw since token is invalid
         lenient().when(cookieService.getRefreshTokenCookieName()).thenReturn("refreshToken");
         when(request.getCookies()).thenReturn(null);
-        when(jwtService.isRefreshToken("invalid-token")).thenReturn(false);
-        when(messageHelper.getMessage("token.refresh.invalid")).thenReturn("Invalid");
+        when(jwtService.parse("invalid-token")).thenThrow(new BadCredentialsException("Invalid"));
 
         // Action
         authService.processLogout(body, request, response);
