@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * <h1>OAuth2 Protocol Orchestrator & JIT Provisioning Engine</h1>
@@ -105,17 +106,25 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
         logger.info("Social authentication successful for principal: {}", authentication.getName());
 
         // 1. Normalize attributes
-        Map<String, Object> attributes = fetchAttributes(authentication);
+        Map<String, Object> attributes = extractProviderAttributes(authentication);
         String email = (String) attributes.get("email");
         Provider provider = (Provider) attributes.get("provider");
 
-        // 2. Synchronize social user (JIT Provisioning & Attribute Sync)
-        User user = userRepository.findByEmail(email).map(existingUser -> {
+        // 2. Check if existing user is disabled before attempting JIT/provisioning
+        Optional<User> existingUser = userRepository.findByEmail(email);
+        if (existingUser.isPresent() && !existingUser.get().isEnabled()) {
+            logger.warn("Blocked OAuth2 login attempt for disabled user: {}", PrivacyHelper.maskEmail(email));
+            response.sendRedirect(frontendRedirectUrl + "?error=disabled");
+            return;
+        }
+
+        // 3. Synchronize social user (JIT Provisioning & Attribute Sync)
+        User user = existingUser.map(existing -> {
             // Attribute Synchronization: Update profile if it changed
-            existingUser.setName((String) attributes.get("name"));
-            existingUser.setImage((String) attributes.get("image"));
-            existingUser.setUpdatedAt(Instant.now());
-            return userRepository.save(existingUser);
+            existing.setName((String) attributes.get("name"));
+            existing.setImage((String) attributes.get("image"));
+            existing.setUpdatedAt(Instant.now());
+            return userRepository.save(existing);
         }).orElseGet(() -> {
             Role userRole = roleRepository.findByName(UserRole.ROLE_USER)
                     .orElseThrow(() -> new IllegalStateException("Default role ROLE_USER not found"));
@@ -149,10 +158,11 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
     /**
      * <h3>Provider Normalization Engine</h3>
      */
-    private Map<String, Object> fetchAttributes(Authentication authentication) {
+    private Map<String, Object> extractProviderAttributes(Authentication authentication) {
         Map<String, Object> res = new HashMap<>();
-        OAuth2User oAuthUser = (OAuth2User) authentication.getPrincipal();
+        // Yes, OAuth2AuthenticationToken is exactly the OAuth2 equivalent of UsernamePasswordAuthenticationToken!
         OAuth2AuthenticationToken token = (OAuth2AuthenticationToken) authentication;
+        OAuth2User oAuthUser = token.getPrincipal();
 
         String registrationId = token.getAuthorizedClientRegistrationId();
 

@@ -147,4 +147,26 @@ class OAuth2SuccessHandlerTest {
         verify(githubService).getEmailFromGithub(any());
         verify(authService).generateOAuth2AuthenticatedResponse(eq(user), eq(response));
     }
+
+    @Test
+    void onAuthenticationSuccess_WithDisabledUser_ShouldRedirectWithError() throws Exception {
+        OAuth2User oAuth2User = mock(OAuth2User.class);
+        when(oAuth2User.getAttribute("email")).thenReturn("disabled@example.com");
+        when(oAuth2User.getAttribute("name")).thenReturn("Disabled User");
+        when(oAuth2User.getAttribute("picture")).thenReturn("http://image.url");
+
+        OAuth2AuthenticationToken authentication = mock(OAuth2AuthenticationToken.class);
+        when(authentication.getPrincipal()).thenReturn(oAuth2User);
+        when(authentication.getAuthorizedClientRegistrationId()).thenReturn("google");
+
+        User disabledUser = User.builder().email("disabled@example.com").enabled(false).build();
+        when(userRepository.findByEmail("disabled@example.com")).thenReturn(Optional.of(disabledUser));
+
+        oAuth2SuccessHandler.onAuthenticationSuccess(request, response, authentication);
+
+        verify(response).sendRedirect(contains("?error=disabled"));
+        verifyNoInteractions(authService);
+        verifyNoInteractions(roleRepository);
+        verify(userRepository, never()).save(any());
+    }
 }
