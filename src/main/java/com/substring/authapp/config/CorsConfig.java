@@ -2,11 +2,9 @@ package com.substring.authapp.config;
 
 import lombok.Getter;
 import lombok.Setter;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.stereotype.Component;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -17,14 +15,14 @@ import java.util.List;
 @Configuration
 public class CorsConfig {
 
-    private final CorsProperties corsProperties;
-
-    public CorsConfig(CorsProperties corsProperties) {
-        this.corsProperties = corsProperties;
+    @Bean
+    @ConfigurationProperties(prefix = "app.cors")
+    public CorsProperties corsProperties() {
+        return new CorsProperties();
     }
 
     @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
+    public CorsConfigurationSource corsConfigurationSource(CorsProperties corsProperties) {
         List<String> allowedOrigins = Arrays.asList(
                 corsProperties.getAllowedOrigins().split("\\s*,\\s*")
         );
@@ -40,8 +38,6 @@ public class CorsConfig {
         return source;
     }
 
-    @Component
-    @ConfigurationProperties(prefix = "app.cors")
     @Getter
     @Setter
     public static class CorsProperties {
