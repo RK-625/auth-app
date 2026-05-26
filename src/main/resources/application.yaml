@@ -51,6 +51,10 @@ app:
     max-password-length: 72
   cors:
     allowed-origins: ""
+    max-age: 3600
+  security:
+    oauth2:
+      redirect-url: ${OAUTH2_REDIRECT_URL:http://localhost:3000/oauth2/redirect/}
 
 # -----------------------------------------------------------------------------
 # ACCOUNT LOCKOUT CONFIGURATION
