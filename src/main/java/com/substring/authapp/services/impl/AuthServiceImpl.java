@@ -472,7 +472,6 @@ public class AuthServiceImpl implements AuthService {
     public void resetPassword(String email, String otp, String resetToken, String newPassword) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new BadCredentialsException(messageHelper.getMessage("auth.forget.otp_invalid")));
-        userHelper.validatePasswordComplexity(newPassword);
 
         // Final security check: verify that this specific OTP/Token combo was verified and hasn't expired
         boolean valid = resetPasswordObjectRepository

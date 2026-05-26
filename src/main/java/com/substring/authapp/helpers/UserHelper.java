@@ -57,12 +57,6 @@ public class UserHelper {
     private final PasswordEncoder passwordEncoder;
     private final RoleRepository roleRepository;
 
-    @org.springframework.beans.factory.annotation.Value("${app.validation.min-password-length:6}")
-    private int minPasswordLength;
-
-    @org.springframework.beans.factory.annotation.Value("${app.validation.max-password-length:72}")
-    private int maxPasswordLength;
-
     // ===================================================================================
     // SECTION 2: Validation Logic (Public)
     // ===================================================================================
@@ -87,73 +81,47 @@ public class UserHelper {
     }
 
     /**
-     * <h1>Registration Gatekeeper</h1>
+     * <h1>Uniqueness Gatekeeper</h1>
      * 
-     * <p>Enforces strict business rules on incoming registration data to ensure 
-     * data integrity and account uniqueness before any persistence occurs.</p>
-     * 
-     * <p><b>Implementation Workflow:</b>
-     * 1. <b>Null Check:</b> Verifies that critical identity fields (Email) are present.
-     * 2. <b>Policy Enforcement:</b> Ensures the password meets complexity/length requirements.
-     * 3. <b>Uniqueness Verification:</b> Queries the database to prevent duplicate account creation.
-     * </p>
-     * 
-     * <p><b>Behind the Scenes (Database Handshake):</b>
-     * This method triggers an optimized {@code EXISTS} query via {@link UserRepository#existsByEmail(String)}. 
-     * This is a high-performance check that returns as soon as a single matching record is found, 
-     * preventing unnecessary full-table scans.
-     * </p>
-     * 
-     * <p><b>Design Rationale (The "Why"):</b>
-     * Performing these checks in the Helper layer provides <b>Fail-Fast</b> behavior. 
-     * It prevents the application from initiating expensive transaction resources (database locks, 
-     * password hashing) if the request is fundamentally invalid.
-     * </p>
-     * 
+     * <p>Enforces email uniqueness. Format validation (not-null, not-blank, valid email) 
+     * is handled by the controller layer via {@code @Valid} on the request DTO.</p>
+     *
      * @param email The candidate email address.
-     * @param password The candidate password.
-     * @throws IllegalArgumentException If email is missing, password is too short, or email already exists.
+     * @throws IllegalArgumentException If the email already exists.
      */
-    public void validateUserForSignup(String email, String password) {
-        if (email == null || email.isBlank() || userRepository.existsByEmail(email)) {
+    public void assertEmailAvailable(String email) {
+        if (userRepository.existsByEmail(email)) {
             throw new IllegalArgumentException(messageHelper.getMessage("user.register.not_available"));
         }
-        validatePasswordComplexity(password);
     }
 
     /**
-     * <h1>Password Complexity Gatekeeper</h1>
+     * <h1>Registration Gatekeeper</h1>
      * 
-     * <p>Enforces strict business rules on passwords.</p>
-     * 
-     * @param password The candidate password.
-     * @throws IllegalArgumentException If password is too short or too long.
+     * <p>Enforces email uniqueness at signup. Format and length validation is 
+     * handled by the controller layer via {@code @Valid} on the request DTO.</p>
+     *
+     * @param email The candidate email address.
+     * @param password Unused — retained for API compatibility, validated by DTO.
+     * @throws IllegalArgumentException If the email already exists.
      */
-    public void validatePasswordComplexity(String password) {
-        if (password == null || password.length() < minPasswordLength || password.length() > maxPasswordLength) {
-             throw new IllegalArgumentException(messageHelper.getMessage("user.register.password_too_short"));
-        }
+    public void validateUserForSignup(String email, String password) {
+        assertEmailAvailable(email);
     }
 
     /**
      * <h1>Email Validation Gatekeeper</h1>
      *
-     * <p>Enforces basic uniqueness and presence constraints specifically for the email field.</p>
-     *
-     * <p><b>Implementation Workflow:</b>
-     * 1. Validates presence of the email string.
-     * 2. Defers to {@link UserRepository#existsByEmail(String)} for collision detection.</p>
-     *
-     * <p><b>Design Rationale:</b>
-     * Isolated validation for flows that only collect an email (Phase 1 of Signup) before a password is required.</p>
+     * <p>Enforces email uniqueness. Format validation is handled by the controller 
+     * layer via {@code @Valid} on the request DTO.</p>
      *
      * @param email The candidate email address.
-     * @throws IllegalArgumentException If the email is blank or already exists.
+     * @throws IllegalArgumentException If the email already exists.
+     * @deprecated Use {@link #assertEmailAvailable(String)} for clarity.
      */
+    @Deprecated
     public void validateSignUpEmail(String email) {
-        if (email == null || email.isBlank() || userRepository.existsByEmail(email)) {
-            throw new IllegalArgumentException(messageHelper.getMessage("user.register.not_available"));
-        }
+        assertEmailAvailable(email);
     }
 
 
