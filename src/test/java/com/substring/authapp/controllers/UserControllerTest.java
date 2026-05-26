@@ -61,7 +61,7 @@ public class UserControllerTest {
         // Arrange
         AdminUserCreateRequest request = AdminUserCreateRequest.builder()
                 .email("test@example.com")
-                .password("password123")
+                .password("Admin@123")
                 .name("Test User")
                 .build();
 
