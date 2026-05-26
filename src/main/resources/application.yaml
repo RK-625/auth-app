@@ -49,6 +49,8 @@ app:
   validation:
     min-password-length: 6
     max-password-length: 72
+  cors:
+    allowed-origins: ""
 
 # -----------------------------------------------------------------------------
 # ACCOUNT LOCKOUT CONFIGURATION

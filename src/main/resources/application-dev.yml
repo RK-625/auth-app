@@ -105,6 +105,8 @@ security:
 # Custom Application Security Properties
 # -----------------------------------------------------------------------------
 app:
+  cors:
+    allowed-origins: http://localhost:3000
   security:
     root:
       # Reusing the existing Mail variables for the Root User can it later for the root user's credentials
