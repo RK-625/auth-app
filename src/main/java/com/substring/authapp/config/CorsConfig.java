@@ -1,8 +1,6 @@
 package com.substring.authapp.config;
 
-import lombok.Getter;
-import lombok.Setter;
-import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
@@ -16,31 +14,20 @@ import java.util.List;
 public class CorsConfig {
 
     @Bean
-    @ConfigurationProperties(prefix = "app.cors")
-    public CorsProperties corsProperties() {
-        return new CorsProperties();
-    }
-
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource(CorsProperties corsProperties) {
-        List<String> allowedOrigins = Arrays.asList(
-                corsProperties.getAllowedOrigins().split("\\s*,\\s*")
-        );
-
+    public CorsConfigurationSource corsConfigurationSource(
+            @Value("${app.cors.allowed-origins:}") String inputOrigins,
+            @Value("${app.cors.max-age:3600}") Long maxAge) {
+        List<String> allowedOrigins = inputOrigins.isBlank()
+                ? List.of()
+                : Arrays.asList(inputOrigins.split("\\s*,\\s*"));
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(allowedOrigins);
         config.setAllowCredentials(true);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
-
+        config.setMaxAge(maxAge);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
-    }
-
-    @Getter
-    @Setter
-    public static class CorsProperties {
-        private String allowedOrigins = "";
     }
 }
