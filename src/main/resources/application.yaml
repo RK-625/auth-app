@@ -29,9 +29,40 @@ spring:
           auth: true
           starttls:
             enable: true
+  threads:
+    virtual:
+          enabled: true
 
 server:
   port: 8082
+  tomcat:
+    max-http-form-post-size: 2MB
+
+# -----------------------------------------------------------------------------
+# RUNTIME OPTIMIZATIONS (JAVA 21+)
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# APPLICATION VALIDATION RULES
+# -----------------------------------------------------------------------------
+app:
+  validation:
+    min-password-length: 6
+    max-password-length: 72
+  cors:
+    allowed-origins: ""
+    max-age: 3600
+  security:
+    oauth2:
+      redirect-url: ${OAUTH2_REDIRECT_URL:http://localhost:3000/oauth2/redirect/}
+
+# -----------------------------------------------------------------------------
+# ACCOUNT LOCKOUT CONFIGURATION
+# -----------------------------------------------------------------------------
+security:
+  lockout:
+    max-failed-attempts: 5
+    duration-minutes: 15
 
 # -----------------------------------------------------------------------------
 # OBSERVABILITY & MONITORING (SPRING ACTUATOR)

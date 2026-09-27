@@ -3,6 +3,7 @@ package com.substring.authapp.controllers;
 import com.substring.authapp.dtos.admin.AdminUserCreateRequest;
 import com.substring.authapp.dtos.admin.ManagementUserResponse;
 import com.substring.authapp.dtos.user.AuthUserResponse;
+import com.substring.authapp.dtos.user.PasswordChangeRequest;
 import com.substring.authapp.dtos.user.UserUpdateRequest;
 import com.substring.authapp.entities.User;
 import com.substring.authapp.entities.UserRole;
@@ -228,5 +229,32 @@ public class UserController {
         }
 
         return ResponseEntity.ok(userService.updateUser(request, userId));
+    }
+
+    /**
+     * Self-service endpoint to change password.
+     *
+     * @param request The password change payload.
+     * @param currentUser The currently authenticated principal.
+     * @return ResponseEntity with 204 No Content status.
+     */
+    @PostMapping("/user/me/password")
+    public ResponseEntity<Void> changePassword(
+            @Valid @RequestBody PasswordChangeRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        userService.changePassword(request, currentUser);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Self-service endpoint to delete the authenticated user's account.
+     *
+     * @param currentUser The currently authenticated principal.
+     * @return ResponseEntity with 204 No Content status.
+     */
+    @DeleteMapping("/user/me")
+    public ResponseEntity<Void> deleteSelfAccount(@AuthenticationPrincipal User currentUser) {
+        userService.deleteUser(currentUser.getId());
+        return ResponseEntity.noContent().build();
     }
 }

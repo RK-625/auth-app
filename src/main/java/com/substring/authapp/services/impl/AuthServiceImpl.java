@@ -30,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Optional;
@@ -106,6 +107,12 @@ public class AuthServiceImpl implements AuthService {
     @Value("${security.otp.grace-period-ttl-seconds:60}")
     private long gracePeriodTtl;
 
+    @Value("${security.lockout.max-failed-attempts:5}")
+    private int maxFailedAttempts;
+
+    @Value("${security.lockout.duration-minutes:30}")
+    private int lockoutDurationMinutes;
+
     // ===================================================================================
     // SECTION 2: Core Authentication Facade (The "Public API")
     // ===================================================================================
@@ -122,8 +129,16 @@ public class AuthServiceImpl implements AuthService {
      * @return A complete {@link TokenResponse}.
      */
     @Override
+    @Transactional
     public TokenResponse loginRequest(Authentication authentication, HttpServletResponse response) {
         User user = (User) authentication.getPrincipal();
+
+        if (user.getFailedAttempts() > 0 || user.getLockedUntil() != null) {
+            user.setFailedAttempts(0);
+            user.setLockedUntil(null);
+            userRepository.save(user);
+        }
+
         String accessToken = jwtService.generateAccessToken(user);
 
         RefreshToken refreshTokenOb = createRefreshToken(user);
@@ -131,6 +146,42 @@ public class AuthServiceImpl implements AuthService {
 
         meterRegistry.counter("auth.login.success").increment();
         return generateAuthenticatedResponse(response, user, accessToken, refreshToken);
+    }
+
+    /**
+     * <h1>Failed Login Tracker</h1>
+     * 
+     * <p>Records a failed login attempt for a user identified by email. If the failure
+     * count reaches the configured threshold, the account is locked, all existing
+     * sessions are instantly invalidated, and further login attempts will be denied
+     * until the lockout duration expires.</p>
+     *
+     * <p><b>Anti-Enumeration Design:</b> This method silently does nothing if no user
+     * is found for the given email, preventing attackers from determining which
+     * emails are registered.</p>
+     *
+     * @param email The email address used in the failed attempt.
+     */
+    @Override
+    @Transactional
+    public void recordFailedLoginAttempt(String email) {
+        userRepository.findByEmail(email).ifPresent(user -> {
+            if (user.getLockedUntil() != null && Instant.now().isBefore(user.getLockedUntil())) {
+                Duration remaining = Duration.between(Instant.now(), user.getLockedUntil());
+                long remainingMinutes = Math.max(remaining.toMinutes(), 1);
+                long doubledMinutes = Math.min(remainingMinutes * 2, 24 * 60);
+                user.setLockedUntil(Instant.now().plus(Duration.ofMinutes(doubledMinutes)));
+                log.warn("Lock extended for user: {} — new expiry in {} minutes", user.getEmail(), doubledMinutes);
+                userRepository.save(user);
+                return;
+            }
+            user.setFailedAttempts(user.getFailedAttempts() + 1);
+            if (user.getFailedAttempts() >= maxFailedAttempts) {
+                user.setLockedUntil(Instant.now().plus(Duration.ofMinutes(lockoutDurationMinutes)));
+                log.warn("Account locked after {} failed attempts for user: {}", user.getFailedAttempts(), user.getEmail());
+            }
+            userRepository.save(user);
+        });
     }
 
     /**
@@ -146,6 +197,7 @@ public class AuthServiceImpl implements AuthService {
      * @return A fresh {@link TokenResponse}.
      */
     @Override
+    @Transactional
     public TokenResponse refreshTokenRequest(RefreshTokenRequest body, HttpServletResponse response, HttpServletRequest request) {
         String tokenStr = extractRefreshToken(body, request);
         RefreshToken refreshTokenOb = getValidatedRefreshToken(tokenStr);
@@ -234,6 +286,10 @@ public class AuthServiceImpl implements AuthService {
             finalOtp = newKeys.getFirst();
             signUpObjectRepository.save(existing);
         } else {
+            // CONCURRENCY HARDENING: Atomic cleanup of potential stale records 
+            // for the same email that might have been inserted between the check and here.
+            signUpObjectRepository.deleteByEmail(request.getEmail());
+
             // Use Generic Factory for new requests
             var keys = userHelper.generateUniqueHandshakeKeys(k -> false); // New record for this email
             SignUpObject newSignup = new SignUpObject(request.getEmail(), keys.getFirst(), keys.getSecond(), initialTtl);
@@ -286,18 +342,17 @@ public class AuthServiceImpl implements AuthService {
      * immediate cleanup of the staging record.</p>
      * 
      * @param email User email.
-     * @param otp OTP used in Phase 2.
      * @param signUpToken UUID token issued in Phase 2.
      * @param password The raw password for the new account.
      */
     @Override
     @Transactional
-    public void verifySignUpToken(String email, String otp, String signUpToken, String password) {
+    public void verifySignUpToken(String email, String signUpToken, String password) {
         userHelper.validateUserForSignup(email, password); 
 
         // Critical: Check for used=true to prevent Phase 2 bypass
         SignUpObject validObject = signUpObjectRepository
-                .findByEmailAndOtpAndExpiresAtGreaterThanAndSignUpToken(email, otp, Instant.now(), UUID.fromString(signUpToken))
+                .findByEmailAndExpiresAtGreaterThanAndSignUpToken(email, Instant.now(), UUID.fromString(signUpToken))
                 .filter(SignUpObject::isUsed) // Enforce that OTP was verified
                 .orElseThrow(() -> new BadCredentialsException(messageHelper.getMessage("signup.validation.failure")));
 
@@ -323,7 +378,11 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void initiatePasswordReset(String email) {
-        User user = userHelper.validateAndGetUserForAuth(email);
+        Optional<User> userOpt = userRepository.findByEmail(email);
+        if (userOpt.isEmpty()) {
+            return; // Silently return to prevent user enumeration
+        }
+        User user = userOpt.get();
         Optional<ResetPasswordObject> activeOtp = resetPasswordObjectRepository.findByUserAndExpiresAtGreaterThan(user, Instant.now());
 
         if (activeOtp.isPresent()) {
@@ -382,7 +441,8 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public String verifyPasswordResetOtp(String email, String otp) {
-        User user = userHelper.validateAndGetUserForAuth(email);
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new BadCredentialsException(messageHelper.getMessage("auth.forget.otp_invalid")));
 
         ResetPasswordObject resetPasswordObject = resetPasswordObjectRepository
                 .findByUserAndOtpAndUsedFalseAndExpiresAtGreaterThanEqual(user, otp, Instant.now())
@@ -410,7 +470,8 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void resetPassword(String email, String otp, String resetToken, String newPassword) {
-        User user = userHelper.validateAndGetUserForAuth(email);
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new BadCredentialsException(messageHelper.getMessage("auth.forget.otp_invalid")));
 
         // Final security check: verify that this specific OTP/Token combo was verified and hasn't expired
         boolean valid = resetPasswordObjectRepository
@@ -420,6 +481,10 @@ public class AuthServiceImpl implements AuthService {
         if (valid) {
             // Update the password using the standard secure encoder
             user.setPassword(passwordEncoder.encode(newPassword));
+            user.setTokenVersion(user.getTokenVersion() + 1);
+            user.setFailedAttempts(0);
+            user.setLockedUntil(null);
+            refreshTokenRepository.revokeAllByUser(user);
             userRepository.save(user);
 
             // Clean up: delete the reset object immediately after use
@@ -505,6 +570,9 @@ public class AuthServiceImpl implements AuthService {
     public RefreshToken getValidatedRefreshToken(String refreshTokenStr) {
         // Parse once to extract claims
         io.jsonwebtoken.Claims claims = jwtService.parse(refreshTokenStr).getPayload();
+        if (!"refresh".equals(claims.get("typ"))) {
+            throw new BadCredentialsException(messageHelper.getMessage("token.refresh.invalid"));
+        }
         String jti = claims.getId();
         UUID userId = UUID.fromString(claims.getSubject());
 
@@ -514,17 +582,21 @@ public class AuthServiceImpl implements AuthService {
 
         // 2. Critical security checks
         if (refreshTokenOb.isRevoked()) {
-            // DETECTED COMPROMISE: "Token Family Revocation" (The Kill Switch)
-            // If a revoked token is reused, we assume the whole session family is stolen.
-            log.warn("DETECTED COMPROMISE: Revoked token reuse attempt for user: {}. Triggering Kill-Switch.", userId);
-            refreshTokenRepository.revokeAllByUser(refreshTokenOb.getUser());
-            throw new BadCredentialsException(messageHelper.getMessage("token.refresh.compromised"));
+            log.warn("Revoked token reuse attempt for user: {}. Token: {}", userId, jti);
+            throw new BadCredentialsException(messageHelper.getMessage("token.refresh.revoked"));
         }
         
         if (refreshTokenOb.getExpiresAt().isBefore(Instant.now())) throw new BadCredentialsException(messageHelper.getMessage("token.refresh.expired"));
 
         // 3. Ownership check: ensure the token belongs to the user specified in the JWT payload
         if (!refreshTokenOb.getUser().getId().equals(userId)) throw new BadCredentialsException(messageHelper.getMessage("token.refresh.user_mismatch"));
+
+        // 4. Token version check: reject tokens issued before credential changes
+        int tokenVersion = claims.get("version", Integer.class);
+        if (tokenVersion != refreshTokenOb.getUser().getTokenVersion()) {
+            log.warn("Refresh token version mismatch for user: {}. JWT version: {}, DB version: {}.", userId, tokenVersion, refreshTokenOb.getUser().getTokenVersion());
+            throw new BadCredentialsException(messageHelper.getMessage("token.refresh.version_mismatch"));
+        }
 
         return refreshTokenOb;
     }
@@ -540,13 +612,8 @@ public class AuthServiceImpl implements AuthService {
      * (Cookies first, fallback to JSON body).</p>
      */
     private String extractRefreshToken(RefreshTokenRequest body, HttpServletRequest request) {
-        String refreshToken = readRefreshTokenRequest(body, request)
+        return readRefreshTokenRequest(body, request)
                 .orElseThrow(() -> new BadCredentialsException(messageHelper.getMessage("token.refresh.not_present")));
-
-        if (!jwtService.isRefreshToken(refreshToken)) {
-            throw new BadCredentialsException(messageHelper.getMessage("token.refresh.invalid"));
-        }
-        return refreshToken;
     }
 
     /**
@@ -582,7 +649,19 @@ public class AuthServiceImpl implements AuthService {
         cookieService.addNoStoreHeadersToResponse(response);
 
         // 3. Map User entity to minimalist Auth View for the response body
-        AuthUserResponse authUserResponse = modelMapper.map(user, AuthUserResponse.class);
+        AuthUserResponse authUserResponse = AuthUserResponse.builder()
+                .id(user.getId())
+                .email(user.getEmail())
+                .name(user.getName())
+                .image(user.getImage())
+                .provider(user.getProvider())
+                .roles(user.getRoles().stream()
+                        .map(role -> com.substring.authapp.dtos.admin.RoleDto.builder()
+                                .id(role.getId())
+                                .name(role.getName().name())
+                                .build())
+                        .collect(java.util.stream.Collectors.toSet()))
+                .build();
 
         // 4. Construct and return the final TokenResponse body
         return TokenResponse.builder()
@@ -606,6 +685,7 @@ public class AuthServiceImpl implements AuthService {
      * 2. <b>Credential Generation:</b> Signs a fresh Refresh JWT containing the JTI.
      * 3. <b>Cookie Injection:</b> Attaches the token as a secure, HttpOnly cookie to the {@link HttpServletResponse}.
      * 4. <b>Header Hardening:</b> Adds Cache-Control directives to prevent token leakage.
+     * 5. <b>Access Provisioning:</b> Generates a stateless Access Token for the frontend.
      * </p>
      * 
      * <p><b>Design Rationale (The "Why"):</b>
@@ -616,9 +696,11 @@ public class AuthServiceImpl implements AuthService {
      * 
      * @param user The provisioned social user.
      * @param response The HTTP response for cookie injection.
+     * @return The generated Access Token string.
      */
     @Override
-    public void generateOAuth2AuthenticatedResponse(User user, HttpServletResponse response) {
+    @Transactional
+    public String generateOAuth2AuthenticatedResponse(User user, HttpServletResponse response) {
         RefreshToken refreshTokenOb = createRefreshToken(user);
 
         String refreshToken = jwtService.generateRefreshToken(user, refreshTokenOb.getJti());
@@ -626,6 +708,9 @@ public class AuthServiceImpl implements AuthService {
         // Handshake Finalization: Inject security cookies directly
         cookieService.attachRefreshCookie(response, refreshToken, (int) jwtService.getRefreshTtlSeconds());
         cookieService.addNoStoreHeadersToResponse(response);
+
+        // Return the Access Token for the frontend handshake
+        return jwtService.generateAccessToken(user);
     }
 
 }

@@ -8,6 +8,8 @@ import com.substring.authapp.entities.User;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.core.Authentication;
+import org.springframework.validation.annotation.Validated;
+import jakarta.validation.Valid;
 
 /**
  * <h1>Authentication & Identity Lifecycle Contract</h1>
@@ -26,6 +28,7 @@ import org.springframework.security.core.Authentication;
  * 
  * @author Gemini CLI
  */
+@Validated
 public interface AuthService {
 
     // ===================================================================================
@@ -36,7 +39,7 @@ public interface AuthService {
      * Initiates the signup handshake by generating a temporary verification object.
      * @param request DTO containing the candidate email.
      */
-    void signUpRequest(SignUpInitiateRequest request);
+    void signUpRequest(@Valid SignUpInitiateRequest request);
 
     /**
      * Verifies the OTP and issues a temporary signup token.
@@ -49,11 +52,10 @@ public interface AuthService {
     /**
      * Finalizes user creation after successful token verification.
      * @param email The user's email.
-     * @param otp The OTP code.
      * @param signUpToken The UUID token from Phase 2.
      * @param password The raw password to be hashed.
      */
-    void verifySignUpToken(String email ,String otp ,String signUpToken, String password);
+    void verifySignUpToken(String email ,String signUpToken, String password);
 
     // ===================================================================================
     // SECTION 2: Recovery Handshake (Password Reset)
@@ -86,6 +88,17 @@ public interface AuthService {
     // SECTION 3: Session Management & Security
     // ===================================================================================
     
+    /**
+     * <h1>Failed Login Recording</h1>
+     * 
+     * <p>Records a failed login attempt for a given email. If the consecutive failure count
+     * exceeds the configured limit, the account is locked for a set duration and all active
+     * sessions are invalidated via token version bump and refresh token revocation.</p>
+     *
+     * @param email The email address used in the failed login attempt (may not exist).
+     */
+    void recordFailedLoginAttempt(String email);
+
     /**
      * Creates a new stateful refresh token record.
      * @param user The principal for whom the token is generated.
@@ -159,6 +172,7 @@ public interface AuthService {
      * 
      * @param user The provisioned social user.
      * @param response The HTTP response for cookie injection.
+     * @return The generated Access Token string.
      */
-    void generateOAuth2AuthenticatedResponse(User user, HttpServletResponse response);
+    String generateOAuth2AuthenticatedResponse(User user, HttpServletResponse response);
 }

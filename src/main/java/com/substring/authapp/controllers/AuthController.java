@@ -1,6 +1,8 @@
 package com.substring.authapp.controllers;
 
 import com.substring.authapp.dtos.auth.*;
+import com.substring.authapp.entities.User;
+import com.substring.authapp.repositories.UserRepository;
 import com.substring.authapp.services.AuthService;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,9 +13,12 @@ import com.substring.authapp.helpers.MessageHelper;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.Map;
 
@@ -65,6 +70,7 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final MessageHelper messageHelper;
     private final MeterRegistry meterRegistry;
+    private final UserRepository userRepository;
 
     // ===================================================================================
     // SECTION 2: Core Authentication Handshakes
@@ -110,6 +116,19 @@ public class AuthController {
     private org.springframework.security.core.Authentication authenticate(LoginRequest loginRequest) {
         try {
             return authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(loginRequest.email(), loginRequest.password()));
+        } catch (BadCredentialsException e) {
+            authService.recordFailedLoginAttempt(loginRequest.email());
+            meterRegistry.counter("auth.login.failure").increment();
+            throw new BadCredentialsException(messageHelper.getMessage("auth.login.invalid_credentials"));
+        } catch (LockedException e) {
+            authService.recordFailedLoginAttempt(loginRequest.email());
+            User user = userRepository.findByEmail(loginRequest.email()).orElse(null);
+            if (user != null && user.getLockedUntil() != null) {
+                long minutesLeft = Duration.between(Instant.now(), user.getLockedUntil()).toMinutes();
+                String formattedDuration = formatLockoutDuration(Math.max(minutesLeft, 1));
+                throw new BadCredentialsException(messageHelper.getMessage("auth.user.locked", formattedDuration));
+            }
+            throw new BadCredentialsException(messageHelper.getMessage("auth.login.invalid_credentials"));
         } catch (Exception e) {
             meterRegistry.counter("auth.login.failure").increment();
             throw new BadCredentialsException(messageHelper.getMessage("auth.login.invalid_credentials"));
@@ -238,7 +257,7 @@ public class AuthController {
      */
     @PostMapping("/signup/verifytoken")
     public ResponseEntity<Void> signUpRequestThird(@Valid @RequestBody SignUpCompleteRequest request) {
-        authService.verifySignUpToken(request.getEmail(), request.getOtp(), request.getSignUpToken(), request.getPassword());
+        authService.verifySignUpToken(request.getEmail(), request.getSignUpToken(), request.getPassword());
         return ResponseEntity.ok().build();
     }
 
@@ -324,5 +343,18 @@ public class AuthController {
     public ResponseEntity<Void> forgetPasswordThird(@Valid @RequestBody PasswordResetCompleteRequest request) {
         authService.resetPassword(request.getEmail(), request.getOtp(), request.getResetToken(), request.getPassword());
         return ResponseEntity.ok().build();
+    }
+
+    private String formatLockoutDuration(long totalMinutes) {
+        long hours = totalMinutes / 60;
+        long minutes = totalMinutes % 60;
+        
+        String hrStr = hours == 1 ? "1 hour" : hours + " hours";
+        String minStr = minutes == 1 ? "1 minute" : minutes + " minutes";
+        
+        if (hours == 0) return minStr;
+        if (minutes == 0) return hrStr;
+        
+        return hrStr + ", " + minStr;
     }
 }

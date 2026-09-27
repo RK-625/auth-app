@@ -96,12 +96,12 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void whenDataIntegrityViolationException_thenReturns409AndDoesNotLeakDetails() throws Exception {
-        when(messageHelper.getMessage("user.register.email_exists")).thenReturn("Email already exists");
+        when(messageHelper.getMessage("user.register.not_available")).thenReturn("Registration not available");
 
         mockMvc.perform(get("/test/data-integrity")
                 .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("Email already exists"));
+                .andExpect(jsonPath("$.message").value("Registration not available"));
     }
 
     @Test

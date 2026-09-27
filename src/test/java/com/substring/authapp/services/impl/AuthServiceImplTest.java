@@ -64,6 +64,8 @@ class AuthServiceImplTest {
     void setUp() {
         ReflectionTestUtils.setField(authService, "initialTtl", 300L);
         ReflectionTestUtils.setField(authService, "gracePeriodTtl", 60L);
+        ReflectionTestUtils.setField(authService, "maxFailedAttempts", 5);
+        ReflectionTestUtils.setField(authService, "lockoutDurationMinutes", 15);
         
         // Mock MeterRegistry behavior
         Counter mockCounter = mock(Counter.class);
@@ -87,7 +89,6 @@ class AuthServiceImplTest {
         when(jwtService.getRefreshTtlSeconds()).thenReturn(3600L);
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(i -> i.getArgument(0));
         when(jwtService.generateRefreshToken(eq(user), anyString())).thenReturn("refresh-token");
-        when(modelMapper.map(user, AuthUserResponse.class)).thenReturn(new AuthUserResponse());
 
         // Action
         TokenResponse result = authService.loginRequest(authentication, response);
@@ -109,7 +110,6 @@ class AuthServiceImplTest {
         // Mock extraction
         lenient().when(cookieService.getRefreshTokenCookieName()).thenReturn("refreshToken");
         when(request.getCookies()).thenReturn(null);
-        when(jwtService.isRefreshToken(oldTokenStr)).thenReturn(true);
 
         // Mock validation
         io.jsonwebtoken.Claims claims = mock(io.jsonwebtoken.Claims.class);
@@ -119,6 +119,8 @@ class AuthServiceImplTest {
         when(claims.getId()).thenReturn("jti-123");
         UUID userId = UUID.randomUUID();
         when(claims.getSubject()).thenReturn(userId.toString());
+        lenient().when(claims.get("typ")).thenReturn("refresh");
+        when(claims.get("version", Integer.class)).thenReturn(0);
 
         User user = new User();
         user.setId(userId);
@@ -130,7 +132,6 @@ class AuthServiceImplTest {
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(i -> i.getArgument(0));
         when(jwtService.generateAccessToken(user)).thenReturn("new-access");
         when(jwtService.generateRefreshToken(eq(user), anyString())).thenReturn("new-refresh");
-        when(modelMapper.map(user, AuthUserResponse.class)).thenReturn(new AuthUserResponse());
 
         // Action
         TokenResponse result = authService.refreshTokenRequest(body, response, request);
@@ -251,12 +252,12 @@ void verifySignUpToken_WithValidAndUsedToken_ShouldProvisionUser() {
     SignUpObject signUpObject = new SignUpObject(email, otp, UUID.fromString(token), 300L);
     signUpObject.setUsed(true);
 
-    when(signUpObjectRepository.findByEmailAndOtpAndExpiresAtGreaterThanAndSignUpToken(
-            eq(email), eq(otp), any(Instant.class), eq(UUID.fromString(token))))
+    when(signUpObjectRepository.findByEmailAndExpiresAtGreaterThanAndSignUpToken(
+            eq(email), any(Instant.class), eq(UUID.fromString(token))))
             .thenReturn(Optional.of(signUpObject));
 
     // Action
-    authService.verifySignUpToken(email, otp, token, password);
+    authService.verifySignUpToken(email, token, password);
 
     // Assert
     verify(userHelper).buildAndSaveUser(email, password, null, Provider.LOCAL, UserRole.ROLE_USER);
@@ -272,13 +273,13 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         SignUpObject signUpObject = new SignUpObject(email, otp, UUID.fromString(token), 300L);
         signUpObject.setUsed(false); // NOT VERIFIED
 
-        when(signUpObjectRepository.findByEmailAndOtpAndExpiresAtGreaterThanAndSignUpToken(
-                eq(email), eq(otp), any(Instant.class), eq(UUID.fromString(token))))
+        when(signUpObjectRepository.findByEmailAndExpiresAtGreaterThanAndSignUpToken(
+                eq(email), any(Instant.class), eq(UUID.fromString(token))))
                 .thenReturn(Optional.of(signUpObject));
         when(messageHelper.getMessage("signup.validation.failure")).thenReturn("Validation failed");
 
         // Action & Assert
-        assertThatThrownBy(() -> authService.verifySignUpToken(email, otp, token, "pass"))
+        assertThatThrownBy(() -> authService.verifySignUpToken(email, token, "pass"))
                 .isInstanceOf(BadCredentialsException.class);
     }
 
@@ -317,7 +318,6 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         // Mock token extraction
         lenient().when(cookieService.getRefreshTokenCookieName()).thenReturn("refreshToken");
         when(request.getCookies()).thenReturn(null); // Force body extraction
-        when(jwtService.isRefreshToken(tokenStr)).thenReturn(true);
         
         // Mock getValidatedRefreshToken
         io.jsonwebtoken.Claims claims = mock(io.jsonwebtoken.Claims.class);
@@ -328,6 +328,8 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         
         UUID userId = UUID.randomUUID();
         lenient().when(claims.getSubject()).thenReturn(userId.toString());
+        lenient().when(claims.get("typ")).thenReturn("refresh");
+        lenient().when(claims.get("version", Integer.class)).thenReturn(0);
         
         User user = new User();
         user.setId(userId);
@@ -378,7 +380,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         User user = new User();
         user.setEmail(email);
 
-        when(userHelper.validateAndGetUserForAuth(email)).thenReturn(user);
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
         when(resetPasswordObjectRepository.findByUserAndExpiresAtGreaterThan(eq(user), any(Instant.class)))
                 .thenReturn(Optional.empty());
         when(userHelper.generateUniqueHandshakeKeys(any())).thenReturn(Pair.of("123456", UUID.randomUUID()));
@@ -402,6 +404,20 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
     }
 
     @Test
+    void initiatePasswordReset_WithNonExistentEmail_ShouldSilentlyReturn() {
+        // Setup
+        String email = "nonexistent@example.com";
+        when(userRepository.findByEmail(email)).thenReturn(Optional.empty());
+
+        // Action
+        authService.initiatePasswordReset(email);
+
+        // Assert
+        verifyNoInteractions(resetPasswordObjectRepository);
+        verifyNoInteractions(emailService);
+    }
+
+    @Test
     void verifyPasswordResetOtp_ShouldReturnTokenAndMarkAsUsed() {
         // Setup
         String email = "test@example.com";
@@ -411,7 +427,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         ResetPasswordObject resetObject = new ResetPasswordObject(user, otp, resetToken, 300L);
         resetObject.setUsed(false);
 
-        when(userHelper.validateAndGetUserForAuth(email)).thenReturn(user);
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
         when(resetPasswordObjectRepository.findByUserAndOtpAndUsedFalseAndExpiresAtGreaterThanEqual(eq(user), eq(otp), any(Instant.class)))
                 .thenReturn(Optional.of(resetObject));
 
@@ -435,7 +451,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         User user = new User();
         user.setEmail(email);
 
-        when(userHelper.validateAndGetUserForAuth(email)).thenReturn(user);
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
         when(resetPasswordObjectRepository.findByUserAndExpiresAtGreaterThanAndUsedTrueAndOtpAndResetToken(
                 eq(user), any(Instant.class), eq(otp), eq(UUID.fromString(resetToken))))
                 .thenReturn(Optional.of(new ResetPasswordObject()));
@@ -446,6 +462,10 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
 
         // Assert
         assertThat(user.getPassword()).isEqualTo("encodedPassword");
+        assertThat(user.getTokenVersion()).isEqualTo(1);
+        assertThat(user.getFailedAttempts()).isEqualTo(0);
+        assertThat(user.getLockedUntil()).isNull();
+        verify(refreshTokenRepository).revokeAllByUser(user);
         verify(userRepository).save(user);
         verify(resetPasswordObjectRepository).deleteAllByUser(user);
     }
@@ -458,7 +478,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         String resetToken = UUID.randomUUID().toString();
         
         User user = new User();
-        when(userHelper.validateAndGetUserForAuth(email)).thenReturn(user);
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
         when(resetPasswordObjectRepository.findByUserAndExpiresAtGreaterThanAndUsedTrueAndOtpAndResetToken(
                 eq(user), any(Instant.class), eq(otp), eq(UUID.fromString(resetToken))))
                 .thenReturn(Optional.empty());
@@ -488,19 +508,21 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         lenient().when(jws.getPayload()).thenReturn(claims);
         lenient().when(claims.getId()).thenReturn(jti);
         lenient().when(claims.getSubject()).thenReturn(userId.toString());
+        lenient().when(claims.get("typ")).thenReturn("refresh");
 
         RefreshToken compromisedToken = RefreshToken.create(user, jti, 3600L);
         compromisedToken.setRevoked(true); // Token is already revoked (stolen)
 
         when(refreshTokenRepository.findByJti(jti)).thenReturn(Optional.of(compromisedToken));
-        when(messageHelper.getMessage(anyString())).thenReturn("Error message");
+        when(messageHelper.getMessage("token.refresh.revoked")).thenReturn("Revoked");
 
         // Action & Assert
         assertThatThrownBy(() -> authService.getValidatedRefreshToken(tokenStr))
-                .isInstanceOf(BadCredentialsException.class);
-        
-        // Verify the Kill-Switch was triggered
-        verify(refreshTokenRepository).revokeAllByUser(user);
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessage("Revoked");
+
+        // Verify no collateral damage — revokeAllByUser is NEVER called
+        verify(refreshTokenRepository, never()).revokeAllByUser(any());
     }
 
     @Test
@@ -517,6 +539,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         when(jws.getPayload()).thenReturn(claims);
         when(claims.getId()).thenReturn(jti);
         when(claims.getSubject()).thenReturn(userId.toString());
+        lenient().when(claims.get("typ")).thenReturn("refresh");
 
         RefreshToken expiredToken = RefreshToken.create(user, jti, -100L); // EXPIRED
         when(refreshTokenRepository.findByJti(jti)).thenReturn(Optional.of(expiredToken));
@@ -538,6 +561,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         when(jws.getPayload()).thenReturn(claims);
         when(claims.getId()).thenReturn(jti);
         when(claims.getSubject()).thenReturn(UUID.randomUUID().toString());
+        lenient().when(claims.get("typ")).thenReturn("refresh");
 
         when(refreshTokenRepository.findByJti(jti)).thenReturn(Optional.empty());
         when(messageHelper.getMessage("token.refresh.not_found_db")).thenReturn("Not found");
@@ -560,6 +584,7 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         when(jws.getPayload()).thenReturn(claims);
         when(claims.getId()).thenReturn(jti);
         when(claims.getSubject()).thenReturn(tokenUserId.toString());
+        lenient().when(claims.get("typ")).thenReturn("refresh");
 
         User actualUser = new User();
         actualUser.setId(actualUserId);
@@ -574,17 +599,44 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
     }
 
     @Test
+    void getValidatedRefreshToken_WhenVersionMismatch_ShouldThrowException() {
+        String tokenStr = "old-version-jwt";
+        String jti = "jti-123";
+        UUID userId = UUID.randomUUID();
+
+        io.jsonwebtoken.Claims claims = mock(io.jsonwebtoken.Claims.class);
+        io.jsonwebtoken.Jws jws = mock(io.jsonwebtoken.Jws.class);
+        when(jwtService.parse(tokenStr)).thenReturn(jws);
+        when(jws.getPayload()).thenReturn(claims);
+        when(claims.getId()).thenReturn(jti);
+        when(claims.getSubject()).thenReturn(userId.toString());
+        lenient().when(claims.get("typ")).thenReturn("refresh");
+        when(claims.get("version", Integer.class)).thenReturn(1); // JWT has version 1
+
+        User user = new User();
+        user.setId(userId);
+        user.setTokenVersion(2); // DB has version 2 (credential changed)
+        RefreshToken tokenOb = RefreshToken.create(user, jti, 3600L);
+
+        when(refreshTokenRepository.findByJti(jti)).thenReturn(Optional.of(tokenOb));
+        when(messageHelper.getMessage("token.refresh.version_mismatch")).thenReturn("Version mismatch");
+
+        assertThatThrownBy(() -> authService.getValidatedRefreshToken(tokenStr))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessage("Version mismatch");
+    }
+
+    @Test
     void processLogout_WhenTokenInvalid_ShouldStillClearCookies() {
         // Setup
         HttpServletRequest request = mock(HttpServletRequest.class);
         HttpServletResponse response = mock(HttpServletResponse.class);
         RefreshTokenRequest body = new RefreshTokenRequest("invalid-token");
 
-        // Mock extractRefreshToken to throw exception
+        // Mock getValidatedRefreshToken to throw since token is invalid
         lenient().when(cookieService.getRefreshTokenCookieName()).thenReturn("refreshToken");
         when(request.getCookies()).thenReturn(null);
-        when(jwtService.isRefreshToken("invalid-token")).thenReturn(false);
-        when(messageHelper.getMessage("token.refresh.invalid")).thenReturn("Invalid");
+        when(jwtService.parse("invalid-token")).thenThrow(new BadCredentialsException("Invalid"));
 
         // Action
         authService.processLogout(body, request, response);
@@ -592,5 +644,113 @@ void verifySignUpToken_WithUnverifiedOtp_ShouldThrowException() {
         // Assert
         verify(cookieService).clearRefreshCookie(response);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    // ===================================================================================
+    // STEP 6: Account Lockout Tests
+    // ===================================================================================
+
+    @Test
+    void loginRequest_ShouldResetFailedAttemptsOnSuccess() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        user.setFailedAttempts(3);
+        user.setLockedUntil(Instant.now().plusSeconds(600));
+
+        Authentication authentication = mock(Authentication.class);
+        when(authentication.getPrincipal()).thenReturn(user);
+        HttpServletResponse response = mock(HttpServletResponse.class);
+
+        when(jwtService.generateAccessToken(user)).thenReturn("access-token");
+        when(jwtService.getRefreshTtlSeconds()).thenReturn(3600L);
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(i -> i.getArgument(0));
+        when(jwtService.generateRefreshToken(eq(user), anyString())).thenReturn("refresh-token");
+
+        authService.loginRequest(authentication, response);
+
+        assertThat(user.getFailedAttempts()).isEqualTo(0);
+        assertThat(user.getLockedUntil()).isNull();
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void recordFailedLoginAttempt_ShouldIncrementCounter() {
+        String email = "test@example.com";
+        User user = new User();
+        user.setEmail(email);
+
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+
+        authService.recordFailedLoginAttempt(email);
+
+        assertThat(user.getFailedAttempts()).isEqualTo(1);
+        assertThat(user.getLockedUntil()).isNull();
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void recordFailedLoginAttempt_ShouldLockAccount_AtThreshold() {
+        String email = "test@example.com";
+        User user = new User();
+        user.setEmail(email);
+        user.setFailedAttempts(4);
+
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+
+        authService.recordFailedLoginAttempt(email);
+
+        assertThat(user.getFailedAttempts()).isEqualTo(5);
+        assertThat(user.getLockedUntil()).isNotNull();
+        assertThat(user.getLockedUntil()).isAfter(Instant.now());
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void recordFailedLoginAttempt_ShouldExtendLock_WhenAlreadyLocked() {
+        String email = "test@example.com";
+        Instant futureLock = Instant.now().plusSeconds(600); // 10 min from now
+        User user = new User();
+        user.setEmail(email);
+        user.setFailedAttempts(5);
+        user.setLockedUntil(futureLock);
+
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+
+        authService.recordFailedLoginAttempt(email);
+
+        // Lock should be extended: remaining ~10 min → doubled to ~20 min from now
+        assertThat(user.getFailedAttempts()).isEqualTo(5); // counter unchanged
+        assertThat(user.getLockedUntil()).isAfter(futureLock);
+        assertThat(user.getLockedUntil()).isBefore(Instant.now().plusSeconds(20 * 60 + 5));
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void recordFailedLoginAttempt_ShouldDoNothing_WhenUserNotFound() {
+        String email = "nonexistent@example.com";
+        when(userRepository.findByEmail(email)).thenReturn(Optional.empty());
+
+        authService.recordFailedLoginAttempt(email);
+
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void recordFailedLoginAttempt_ShouldUnlockAndCountAgain_WhenLockExpired() {
+        String email = "test@example.com";
+        Instant pastLock = Instant.now().minusSeconds(100); // expired lock
+        User user = new User();
+        user.setEmail(email);
+        user.setFailedAttempts(5);
+        user.setLockedUntil(pastLock);
+
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+
+        authService.recordFailedLoginAttempt(email);
+
+        // Lock has expired, so +1 to 6 (exceeds threshold again) → should re-lock
+        assertThat(user.getFailedAttempts()).isEqualTo(6);
+        assertThat(user.getLockedUntil()).isAfter(Instant.now());
+        verify(userRepository).save(user);
     }
 }

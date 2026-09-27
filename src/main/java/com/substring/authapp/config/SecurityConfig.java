@@ -8,6 +8,7 @@ import com.substring.authapp.security.RateLimitingFilter;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -28,14 +29,14 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  * <p>This class serves as the central hub for the application's security architecture.
  * It configures Spring Security's {@code SecurityFilterChain}, which is a chain of
  * Servlet Filters that intercept every incoming HTTP request to apply security rules.</p>
- * 
+ *
  * <p><b>Implementation Workflow:</b>
  * 1. <b>Password Hashing:</b> Defines the encoding strategy for user credentials using {@link BCryptPasswordEncoder}.
  * 2. <b>Policy Definition:</b> Sets up CORS, CSRF (Disabled), and Session management policies.
  * 3. <b>Authorization Mapping:</b> Specifies which endpoints are public and which require specific roles.
  * 4. <b>Filter Orchestration:</b> Injects custom filters (Rate Limiter, JWT) into the standard Spring Security pipeline.
  * </p>
- * 
+ *
  * <p><b>Behind the Scenes (Security Handshake):</b>
  * This configuration manages the complex <b>Authentication Handshake</b>. The 
  * {@link JwtAuthenticationFilter} is injected <b>before</b> the standard 
@@ -73,13 +74,16 @@ public class SecurityConfig {
     private final RateLimitingFilter rateLimitingFilter;
     private final MessageHelper messageHelper;
 
+    @Value("${app.security.oauth2.redirect-url}")
+    private String frontendRedirectUrl;
+
     // ===================================================================================
     // SECTION 2: Password Encoding (Cryptography)
     // ===================================================================================
 
     /**
      * <h1>Password Encoding Authority</h1>
-     * 
+     *
      * <p>Provides the primary password hashing mechanism for the application.</p>
      *
      * <p><b>Behind the Scenes (Hashing Handshake):</b>
@@ -104,48 +108,17 @@ public class SecurityConfig {
     // SECTION 3: Security Filter Chain (The "Firewall")
     // ===================================================================================
 
-    /**
-     * <h1>Security Filter Chain Orchestrator</h1>
-     * 
-     * <p>Defines the HTTP security filter chain that manages all web-level security.</p>
-     *
-     * <p><b>Implementation Workflow:</b>
-     * 1. <b>CSRF:</b> Disabled to accommodate stateless API consumers (mobile/React).
-     * 2. <b>CORS:</b> Configured to permit cross-origin requests from the frontend application.
-     * 3. <b>Session:</b> Set to {@code IF_REQUIRED} to support the OAuth2 login state while maintaining an otherwise stateless API.
-     * 4. <b>Access Control:</b> Maps URL patterns to authentication requirements (permitAll vs authenticated).
-     * 5. <b>Custom Filters:</b> Injects the {@link JwtAuthenticationFilter} to handle Bearer token extraction.
-     * </p>
-     *
-     * <p><b>Behind the Scenes (Filter Sequence Handshake):</b>
-     * This method builds a {@code DefaultSecurityFilterChain}. The order of filters is critical:
-     * <ul>
-     *   <li>{@link RateLimitingFilter} is injected <b>before</b> {@link JwtAuthenticationFilter} 
-     *       to protect the system from resource exhaustion at the absolute front-line.</li>
-     *   <li>{@link JwtAuthenticationFilter} is placed <b>before</b> {@code UsernamePasswordAuthenticationFilter} 
-     *       to intercept and validate JWTs before traditional login logic is triggered.</li>
-     * </ul>
-     * This establishes an <b>Order-of-Operations Handshake</b> where security layers 
-     * are peeled back from the least to most resource-intensive.</p>
-     *
-     * <p><b>Design Rationale (The "Why"):</b>
-     * Using a centralized filter chain configuration ensures that security policies are applied consistently
-     * across all endpoints. The use of an {@code AuthenticationEntryPoint} ensures that 401 responses
-     * are standardized and JSON-formatted for API clients.
-     * </p>
-     *
-     * @param http The {@link HttpSecurity} builder.
-     * @return The configured {@link SecurityFilterChain}.
-     * @throws Exception If configuration encounters an error.
-     */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http.csrf(AbstractHttpConfigurer::disable) // CSRF is disabled as we use stateless JWTs
+        http.csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
-                // Stateless session management: No HTTP sessions are created or used by Spring Security
-                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                .headers(headers -> headers
+                        .frameOptions(frameOptions -> frameOptions.deny())
+                        .contentTypeOptions(Customizer.withDefaults())
+                        .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'; img-src 'self' https://grainy-gradients.vercel.app"))
+                )
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
-                        // 1. Publicly accessible endpoints (Auth, OAuth2, Error)
                         .requestMatchers(
                             "/api/v1/auth/**",
                             "/oauth2/**",
@@ -153,35 +126,27 @@ public class SecurityConfig {
                             "/error",
                             "/actuator/health"
                         ).permitAll()
-                        // 2. Role-based access control for administrative paths
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "ROOT")
                         .requestMatchers("/api/v1/root/**").hasRole("ROOT")
-                        // 3. Protected endpoints requiring any valid authentication
                         .requestMatchers("/api/v1/update/user/**").authenticated()
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2
-                        // Handle successful social login redirection and user synchronization
                         .successHandler(authenticationSuccessHandler)
                         .failureHandler((req, res, ex) -> {
                             logger.error("OAuth2 Login failed: {}", ex.getMessage());
-                            res.sendRedirect("/api/v1/auth/oauth2/failure");
+                            res.sendRedirect(frontendRedirectUrl + "?error=oauth2_failure");
                         })
                 )
-                .logout(AbstractHttpConfigurer::disable) // Handled manually in AuthController
-                // Inject the custom JWT filter BEFORE the standard UsernamePasswordAuthenticationFilter
+                .logout(AbstractHttpConfigurer::disable)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                // Inject the rate limiting filter BEFORE the JWT filter (by also placing it before UPAF)
                 .addFilterBefore(rateLimitingFilter, UsernamePasswordAuthenticationFilter.class)
-                // Standardized 401 Unauthorized response for API consumers
-                .exceptionHandling(e -> e.authenticationEntryPoint((req, rsp, ex) -> {
+                .exceptionHandling(e -> e.authenticationEntryPoint((req, rsp, exx) -> {
                     rsp.setStatus(401);
                     rsp.setContentType("application/json");
-                    
                     String message = (String) req.getAttribute("error");
                     if (message == null) message = messageHelper.getMessage("system.error.unauthorized");
-                    
                     ApiError error = ApiError.of(401, "Unauthorized", message, req.getRequestURI());
                     rsp.getWriter().write(objectMapper.writeValueAsString(error));
                 }));
@@ -189,27 +154,6 @@ public class SecurityConfig {
         return http.build();
     }
 
-    // ===================================================================================
-    // SECTION 4: Auth Management (Beans)
-    // ===================================================================================
-
-    /**
-     * Exposes the {@link AuthenticationManager} as a Spring Bean.
-     *
-     * <p><b>Behind the Scenes (Authentication Handshake):</b>
-     * The {@code AuthenticationManager} is the primary interface for manual authentication.
-     * It delegates to a list of {@code AuthenticationProvider}s (like {@code DaoAuthenticationProvider})
-     * which in turn use {@code UserDetailsService} to load user data.</p>
-     *
-     * <p><b>Design Rationale (The "Why"):</b>
-     * Exposing this bean allows the {@link com.substring.authapp.services.AuthService} to programmatically 
-     * authenticate users during the standard login flow, providing a clean separation 
-     * between security configuration and business logic.</p>
-     *
-     * @param configuration The {@link AuthenticationConfiguration} used to retrieve the manager.
-     * @return The configured {@link AuthenticationManager}.
-     * @throws Exception If retrieval fails.
-     */
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
         return configuration.getAuthenticationManager();

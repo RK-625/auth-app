@@ -116,19 +116,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             try {
                 // PHASE 2: Token Type & Signature Validation (Short-Circuit)
-                if (!jwtService.isAccessToken(token)) {
+                Jws<Claims> jws = jwtService.parse(token);
+                Claims claims = jws.getPayload();
+                if (!"access".equals(claims.get("typ"))) {
                     filterChain.doFilter(request, response);
                     return;
                 }
-
-                Jws<Claims> claims = jwtService.parse(token);
-                Claims payload = claims.getPayload();
-                String userId = payload.getSubject();
-                UUID userUUID = UUID.fromString(userId);
+                UUID userUUID = UUID.fromString(claims.getSubject());
 
                 // PHASE 3: Identity Resolution & Security Context Population
                 userRepository.findById(userUUID).ifPresent(user -> {
-                    if (user.isEnabled()) {
+                    Integer tokenVersion = claims.get("version", Integer.class);
+                    if (user.isEnabled() && tokenVersion != null && tokenVersion == user.getTokenVersion()) {
                         List<GrantedAuthority> authorities = user.getRoles() == null ? List.of() : 
                             user.getRoles().stream()
                                 .map(role -> new SimpleGrantedAuthority(role.getName().toString()))

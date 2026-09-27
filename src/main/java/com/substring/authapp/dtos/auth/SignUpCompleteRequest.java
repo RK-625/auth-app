@@ -2,6 +2,7 @@ package com.substring.authapp.dtos.auth;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -53,9 +54,6 @@ public class SignUpCompleteRequest implements Serializable {
     @Email(message = "{user.register.email_invalid}")
     private String email;
 
-    @NotBlank(message = "{auth.forget.otp_required}")
-    private String otp;
-
     @NotBlank(message = "{signup.validation.token_required}")
     private String signUpToken;
 
@@ -64,6 +62,8 @@ public class SignUpCompleteRequest implements Serializable {
     // ===================================================================================
 
     @NotBlank(message = "{user.register.password_required}")
-    @Size(min = 6, max = 15, message = "{user.register.password_too_short}")
+    @Size(min = 6, max = 72, message = "{user.register.password_too_short}")
+    @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&]).{6,72}$", 
+             message = "{user.register.password_complexity}")
     private String password;
 }

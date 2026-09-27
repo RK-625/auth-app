@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class JwtServiceTest {
 
     private JwtService jwtService;
-    private final String secret = "this_is_a_very_long_secret_key_at_least_64_bytes_long_for_hs512_security_standard";
+    private final String secret = "9a65609d57a2f5f190e3f8a04b732629b3a4a9844f6f8972827179929f270929";
     private final long accessTtl = 3600;
     private final long refreshTtl = 86400;
     private final String issuer = "AuthAppTest";
@@ -46,6 +46,7 @@ class JwtServiceTest {
         assertThat(claims.getPayload().getSubject()).isEqualTo(user.getId().toString());
         assertThat(claims.getPayload().get("email")).isEqualTo(user.getEmail());
         assertThat(claims.getPayload().get("typ")).isEqualTo("access");
+        assertThat(claims.getPayload().get("version", Integer.class)).isEqualTo(0);
     }
 
     @Test
@@ -79,12 +80,12 @@ class JwtServiceTest {
     @DisplayName("Should throw ExpiredJwtException when token is expired")
     void parse_WithExpiredToken_ShouldThrowException() {
         // We create an expired token manually using the same key and algorithm
-        // Note: JwtService uses HS512 based on the 64+ byte key.
+        // Note: JwtService uses HS256 based on the 64 char hex key.
         
         String expiredToken = Jwts.builder()
                 .subject(UUID.randomUUID().toString())
                 .expiration(new Date(System.currentTimeMillis() - 10000)) // 10 seconds ago
-                .signWith(jwtService.getKey(), Jwts.SIG.HS512)
+                .signWith(jwtService.getKey(), Jwts.SIG.HS256)
                 .compact();
 
         assertThatThrownBy(() -> jwtService.parse(expiredToken))

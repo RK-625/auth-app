@@ -97,14 +97,21 @@ security:
       cookie-same-site: ${JWT_COOKIE_SAME_SITE}
       cookie-domain: ${JWT_COOKIE_DOMAIN}
 
+    lockout:
+      max-failed-attempts: 5
+      duration-minutes: 15
+
 # -----------------------------------------------------------------------------
 # Custom Application Security Properties
 # -----------------------------------------------------------------------------
 app:
+  cors:
+    max-age: 3600
+    allowed-origins: http://localhost:3000
   security:
     root:
       # Reusing the existing Mail variables for the Root User can it later for the root user's credentials
-      email: ${MAIL_USERNAME}
-      password: ${MAIL_PASSWORD}
+      email: ${ROOT_EMAIL}
+      password: ${ROOT_PASSWORD}
     oauth2:
       redirect-url: "http://localhost:3000/oauth2/redirect/"

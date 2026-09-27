@@ -106,12 +106,14 @@ class OAuth2SuccessHandlerTest {
         // Mock DB behavior
         User existingUser = User.builder().email("existing@google.com").build();
         when(userRepository.findByEmail("existing@google.com")).thenReturn(Optional.of(existingUser));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // Action
         oAuth2SuccessHandler.onAuthenticationSuccess(request, response, authentication);
 
         // Assert
-        verify(userRepository, never()).save(any(User.class));
+        verify(userRepository).save(existingUser);
+        verifyNoInteractions(roleRepository);
         verify(authService).generateOAuth2AuthenticatedResponse(eq(existingUser), eq(response));
         verify(response).sendRedirect(anyString());
     }
@@ -136,6 +138,7 @@ class OAuth2SuccessHandlerTest {
         // Mock DB behavior
         User user = User.builder().email("private@github.com").build();
         when(userRepository.findByEmail("private@github.com")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // Action
         oAuth2SuccessHandler.onAuthenticationSuccess(request, response, authentication);
@@ -143,5 +146,27 @@ class OAuth2SuccessHandlerTest {
         // Assert
         verify(githubService).getEmailFromGithub(any());
         verify(authService).generateOAuth2AuthenticatedResponse(eq(user), eq(response));
+    }
+
+    @Test
+    void onAuthenticationSuccess_WithDisabledUser_ShouldRedirectWithError() throws Exception {
+        OAuth2User oAuth2User = mock(OAuth2User.class);
+        when(oAuth2User.getAttribute("email")).thenReturn("disabled@example.com");
+        when(oAuth2User.getAttribute("name")).thenReturn("Disabled User");
+        when(oAuth2User.getAttribute("picture")).thenReturn("http://image.url");
+
+        OAuth2AuthenticationToken authentication = mock(OAuth2AuthenticationToken.class);
+        when(authentication.getPrincipal()).thenReturn(oAuth2User);
+        when(authentication.getAuthorizedClientRegistrationId()).thenReturn("google");
+
+        User disabledUser = User.builder().email("disabled@example.com").enabled(false).build();
+        when(userRepository.findByEmail("disabled@example.com")).thenReturn(Optional.of(disabledUser));
+
+        oAuth2SuccessHandler.onAuthenticationSuccess(request, response, authentication);
+
+        verify(response).sendRedirect(contains("?error=disabled"));
+        verifyNoInteractions(authService);
+        verifyNoInteractions(roleRepository);
+        verify(userRepository, never()).save(any());
     }
 }

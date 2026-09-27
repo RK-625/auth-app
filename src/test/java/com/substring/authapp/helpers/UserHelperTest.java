@@ -51,19 +51,18 @@ class UserHelperTest {
     @Test
     @DisplayName("Should retry key generation on collision")
     void generateUniqueHandshakeKeys_ShouldRetryOnCollision() {
-        // We create a predicate that fails once and then succeeds
         AtomicInteger counter = new AtomicInteger(0);
         Predicate<Pair<String, UUID>> collisionChecker = pair -> {
             if (counter.getAndIncrement() == 0) {
-                return true; // Simulate collision on first try
+                return true;
             }
-            return false; // Success on second try
+            return false;
         };
 
         Pair<String, UUID> result = userHelper.generateUniqueHandshakeKeys(collisionChecker);
 
         assertThat(result).isNotNull();
-        assertThat(counter.get()).isEqualTo(2); // Should have been called twice
+        assertThat(counter.get()).isEqualTo(2);
     }
 
     @Test
@@ -85,19 +84,7 @@ class UserHelperTest {
         String password = "password123";
 
         when(userRepository.existsByEmail(email)).thenReturn(true);
-        when(messageHelper.getMessage("user.register.email_exists")).thenReturn("Email exists");
-
-        assertThatThrownBy(() -> userHelper.validateUserForSignup(email, password))
-                .isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
-    @DisplayName("Should throw IllegalArgumentException when password is too short")
-    void validateUserForSignup_WithShortPassword_ShouldThrowException() {
-        String email = "valid@example.com";
-        String password = "123"; // Too short
-
-        when(messageHelper.getMessage("user.register.password_too_short")).thenReturn("Too short");
+        when(messageHelper.getMessage("user.register.not_available")).thenReturn("Registration not available");
 
         assertThatThrownBy(() -> userHelper.validateUserForSignup(email, password))
                 .isInstanceOf(IllegalArgumentException.class);

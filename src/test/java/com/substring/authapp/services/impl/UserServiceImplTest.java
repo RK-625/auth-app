@@ -3,6 +3,7 @@ package com.substring.authapp.services.impl;
 import com.substring.authapp.dtos.admin.AdminUserCreateRequest;
 import com.substring.authapp.dtos.admin.ManagementUserResponse;
 import com.substring.authapp.dtos.user.AuthUserResponse;
+import com.substring.authapp.dtos.user.PasswordChangeRequest;
 import com.substring.authapp.dtos.user.UserUpdateRequest;
 import com.substring.authapp.entities.Provider;
 import com.substring.authapp.entities.Role;
@@ -11,6 +12,7 @@ import com.substring.authapp.entities.UserRole;
 import com.substring.authapp.exceptions.ResourceNotFoundException;
 import com.substring.authapp.helpers.MessageHelper;
 import com.substring.authapp.helpers.UserHelper;
+import com.substring.authapp.repositories.RefreshTokenRepository;
 import com.substring.authapp.repositories.RoleRepository;
 import com.substring.authapp.repositories.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -52,6 +54,9 @@ class UserServiceImplTest {
 
     @Mock
     private RoleRepository roleRepository;
+
+    @Mock
+    private RefreshTokenRepository refreshTokenRepository;
 
     @InjectMocks
     private UserServiceImpl userService;
@@ -219,5 +224,41 @@ class UserServiceImplTest {
         // Act & Assert
         assertThatThrownBy(() -> userService.updateUser(new UserUpdateRequest(), userId))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void deleteUser_ShouldRevokeTokens_WhenUserExists() {
+        UUID userId = UUID.randomUUID();
+        User user = User.builder().id(userId).enabled(true).build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        userService.deleteUser(userId);
+
+        assertThat(user.isEnabled()).isFalse();
+        assertThat(user.getTokenVersion()).isEqualTo(1);
+        verify(refreshTokenRepository).revokeAllByUser(user);
+    }
+
+    @Test
+    void changePassword_ShouldBumpTokenVersionAndRevokeTokens() {
+        UUID userId = UUID.randomUUID();
+        User currentUser = User.builder().id(userId).email("test@example.com").password("old-encoded").build();
+
+        User freshUser = User.builder().id(userId).email("test@example.com").password("old-encoded").build();
+
+        PasswordChangeRequest request = new PasswordChangeRequest();
+        request.setCurrentPassword("old-password");
+        request.setNewPassword("new-password");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(freshUser));
+        when(passwordEncoder.matches("old-password", "old-encoded")).thenReturn(true);
+        when(passwordEncoder.encode("new-password")).thenReturn("new-encoded");
+
+        userService.changePassword(request, currentUser);
+
+        assertThat(freshUser.getTokenVersion()).isEqualTo(1);
+        verify(refreshTokenRepository).revokeAllByUser(freshUser);
+        verify(userRepository).save(freshUser);
     }
 }

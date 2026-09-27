@@ -66,12 +66,13 @@ class JwtAuthenticationFilterTest {
 
         Claims claims = mock(Claims.class);
         when(claims.getSubject()).thenReturn(userId.toString());
+        when(claims.get("version", Integer.class)).thenReturn(0);
+        when(claims.get("typ")).thenReturn("access");
         
         @SuppressWarnings("unchecked")
         Jws<Claims> jws = mock(Jws.class);
         when(jws.getPayload()).thenReturn(claims);
 
-        when(jwtService.isAccessToken(token)).thenReturn(true);
         when(jwtService.parse(token)).thenReturn(jws);
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
 
@@ -97,7 +98,6 @@ class JwtAuthenticationFilterTest {
         String token = "expired.jwt.token";
         request.addHeader("Authorization", "Bearer " + token);
 
-        when(jwtService.isAccessToken(token)).thenReturn(true);
         when(jwtService.parse(token)).thenThrow(new ExpiredJwtException(null, null, "Expired"));
 
         jwtAuthenticationFilter.doFilterInternal(request, response, filterChain);
@@ -119,6 +119,7 @@ class JwtAuthenticationFilterTest {
 
         Claims claims = mock(Claims.class);
         when(claims.getSubject()).thenReturn(userId.toString());
+        when(claims.get("version", Integer.class)).thenReturn(0);
         @SuppressWarnings("unchecked")
         Jws<Claims> jws = mock(Jws.class);
         when(jws.getPayload()).thenReturn(claims);
@@ -138,7 +139,6 @@ class JwtAuthenticationFilterTest {
         String token = "malformed.token";
         request.addHeader("Authorization", "Bearer " + token);
 
-        when(jwtService.isAccessToken(token)).thenReturn(true);
         when(jwtService.parse(token)).thenThrow(new RuntimeException("Malformed"));
 
         jwtAuthenticationFilter.doFilterInternal(request, response, filterChain);
