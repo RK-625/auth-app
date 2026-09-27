@@ -121,6 +121,7 @@ public class AuthController {
             meterRegistry.counter("auth.login.failure").increment();
             throw new BadCredentialsException(messageHelper.getMessage("auth.login.invalid_credentials"));
         } catch (LockedException e) {
+            authService.recordFailedLoginAttempt(loginRequest.email());
             User user = userRepository.findByEmail(loginRequest.email()).orElse(null);
             if (user != null && user.getLockedUntil() != null) {
                 long minutesLeft = Duration.between(Instant.now(), user.getLockedUntil()).toMinutes();

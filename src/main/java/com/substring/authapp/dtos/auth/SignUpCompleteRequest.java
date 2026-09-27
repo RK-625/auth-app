@@ -63,7 +63,7 @@ public class SignUpCompleteRequest implements Serializable {
 
     @NotBlank(message = "{user.register.password_required}")
     @Size(min = 6, max = 72, message = "{user.register.password_too_short}")
-    @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]+$", 
+    @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&]).{6,72}$", 
              message = "{user.register.password_complexity}")
     private String password;
 }

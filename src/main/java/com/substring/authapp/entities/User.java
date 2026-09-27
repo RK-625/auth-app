@@ -206,7 +206,7 @@ public class User implements UserDetails {
      */
     @Override
     public boolean isAccountNonExpired() {
-        return lockedUntil == null || Instant.now().isAfter(lockedUntil);
+        return true;
     }
 
     /**
@@ -215,7 +215,7 @@ public class User implements UserDetails {
      */
     @Override
     public boolean isAccountNonLocked() {
-        return true;
+        return lockedUntil == null || Instant.now().isAfter(lockedUntil);
     }
 
     /**

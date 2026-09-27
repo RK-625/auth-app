@@ -18,8 +18,6 @@ import com.substring.authapp.dtos.user.PasswordChangeRequest;
 import org.modelmapper.ModelMapper;
 import com.substring.authapp.helpers.MessageHelper;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;

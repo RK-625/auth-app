@@ -22,9 +22,19 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import com.substring.authapp.entities.User;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.LockedException;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Optional;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -119,5 +129,24 @@ class AuthControllerTest {
         mockMvc.perform(post("/api/v1/auth/logout")
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void login_WhenAccountIsLocked_ShouldReturn401AndTriggerEscalation() throws Exception {
+        LoginRequest loginRequest = new LoginRequest("locked@example.com", "password123");
+        User user = new User();
+        user.setEmail("locked@example.com");
+        user.setLockedUntil(Instant.now().plus(15, ChronoUnit.MINUTES));
+
+        when(authenticationManager.authenticate(any())).thenThrow(new LockedException("User account is locked"));
+        when(userRepository.findByEmail("locked@example.com")).thenReturn(Optional.of(user));
+        when(messageHelper.getMessage(eq("auth.user.locked"), any())).thenReturn("Account locked");
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(loginRequest)))
+                .andExpect(status().isUnauthorized());
+
+        verify(authService).recordFailedLoginAttempt("locked@example.com");
     }
 }
