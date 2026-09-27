@@ -106,6 +106,7 @@ security:
 # -----------------------------------------------------------------------------
 app:
   cors:
+    max-age: 3600
     allowed-origins: http://localhost:3000
   security:
     root:
