@@ -8,6 +8,8 @@ import com.substring.authapp.entities.User;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.core.Authentication;
+import org.springframework.validation.annotation.Validated;
+import jakarta.validation.Valid;
 
 /**
  * <h1>Authentication & Identity Lifecycle Contract</h1>
@@ -26,6 +28,7 @@ import org.springframework.security.core.Authentication;
  * 
  * @author Gemini CLI
  */
+@Validated
 public interface AuthService {
 
     // ===================================================================================
@@ -36,7 +39,7 @@ public interface AuthService {
      * Initiates the signup handshake by generating a temporary verification object.
      * @param request DTO containing the candidate email.
      */
-    void signUpRequest(SignUpInitiateRequest request);
+    void signUpRequest(@Valid SignUpInitiateRequest request);
 
     /**
      * Verifies the OTP and issues a temporary signup token.

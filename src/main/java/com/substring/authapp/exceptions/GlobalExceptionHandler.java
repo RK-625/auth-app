@@ -17,6 +17,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import jakarta.validation.ConstraintViolationException;
 
 import javax.security.auth.login.CredentialExpiredException;
 import java.util.stream.Collectors;
@@ -176,6 +177,31 @@ public class GlobalExceptionHandler {
                 .map(err -> err.getField() + ": " + err.getDefaultMessage())
                 .collect(Collectors.joining(", "));
         
+        ApiError apiError = ApiError.of(HttpStatus.BAD_REQUEST.value(), messageHelper.getMessage("system.validation.failure"), errors, request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(apiError);
+    }
+
+    /**
+     * Constraint Violation Failures (Method-level validation).
+     *
+     * <p><b>Triggering Conditions:</b>
+     * Triggered when a method parameter validated with @Valid at the service interface boundary
+     * fails JSR-303/JSR-380 validation.</p>
+     *
+     * @param e The constraint violation exception.
+     * @param request The current web request.
+     * @return A standardized 400 Bad Request error response.
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiError> handleConstraintViolationException(ConstraintViolationException e, HttpServletRequest request) {
+        String errors = e.getConstraintViolations().stream()
+                .map(violation -> {
+                    String path = violation.getPropertyPath().toString();
+                    String field = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : path;
+                    return field + ": " + violation.getMessage();
+                })
+                .collect(Collectors.joining(", "));
+
         ApiError apiError = ApiError.of(HttpStatus.BAD_REQUEST.value(), messageHelper.getMessage("system.validation.failure"), errors, request.getRequestURI());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(apiError);
     }

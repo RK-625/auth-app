@@ -6,10 +6,10 @@ import com.substring.authapp.dtos.user.AuthUserResponse;
 import com.substring.authapp.dtos.user.PasswordChangeRequest;
 import com.substring.authapp.dtos.user.UserUpdateRequest;
 import com.substring.authapp.entities.User;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-
 import java.util.UUID;
+
+import org.springframework.validation.annotation.Validated;
+import jakarta.validation.Valid;
 
 /**
  * <h1>User Identity & Profile Management Contract</h1>
@@ -30,6 +30,7 @@ import java.util.UUID;
  * 
  * @author Gemini CLI
  */
+@Validated
 public interface UserService {
 
     // ===================================================================================
@@ -41,7 +42,7 @@ public interface UserService {
      * @param request DTO containing the admin user details.
      * @return A sanitized management view of the created user.
      */
-    ManagementUserResponse createUser(AdminUserCreateRequest request);
+    ManagementUserResponse createUser(@Valid AdminUserCreateRequest request);
 
     // ===================================================================================
     // SECTION 2: Profile Orchestration
@@ -53,7 +54,7 @@ public interface UserService {
      * @param userId The unique ID of the user to modify.
      * @return A sanitized response for self-service consumption.
      */
-    AuthUserResponse updateUser(UserUpdateRequest request, UUID userId);
+    AuthUserResponse updateUser(@Valid UserUpdateRequest request, UUID userId);
 
     /**
      * Deactivates a user account (Soft-Delete) to terminate system access.
@@ -66,7 +67,7 @@ public interface UserService {
      * @param request The password change payload.
      * @param currentUser The authenticated principal.
      */
-    void changePassword(PasswordChangeRequest request, User currentUser);
+    void changePassword(@Valid PasswordChangeRequest request, User currentUser);
 
     // ===================================================================================
     // SECTION 3: Identity Retrieval (Query)
